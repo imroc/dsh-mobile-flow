@@ -1,6 +1,6 @@
 {
   "name": "dsh-mobile-flow",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Mobile in-flow composer for the DeepSeek Harness Web UI: on narrow (≤720px) screens the input bar and AI confirmation cards scroll with the page instead of pinning to the viewport floor. Pure client-side CSS overlay.",
   "license": "MIT",
   "type": "module",

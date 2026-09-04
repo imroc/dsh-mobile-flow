@@ -17,6 +17,7 @@ On viewports ≤720px (the same breakpoint the official question card uses):
 1. **The composer seat joins the document flow** — input bar and confirmation cards now live at the end of the transcript. Swipe up and they scroll out of view; the transcript becomes full-screen.
 2. **Short conversations still dock to the bottom** — when the transcript is shorter than one screen, the message area stretches so the composer stays flush with the viewport floor, visually identical to the stock behavior. Long conversations get the full-screen treatment.
 3. **Floating controls re-anchor** — the back-to-bottom button and turn navigator no longer reserve height for the sticky seat and sit close to the viewport floor again.
+4. **Edge-to-edge** — the content-layer paddings that keep the transcript, header, input card, and confirmation cards off the screen edges (16–32px per side) collapse to zero, so narrow screens use every pixel. The page shell itself never adds whitespace; the gaps come entirely from these paddings.
 
 Desktop (wide viewports) is completely unaffected.
 
