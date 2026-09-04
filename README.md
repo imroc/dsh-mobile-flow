@@ -1,48 +1,62 @@
 # dsh-mobile-flow
 
-DeepSeek Harness (dsh) Web UI 手机端插件：窄屏（≤720px）时输入框与 AI 确认选择框
-从「吸在屏幕底部」改为「随页面文档流滚动」，上滑阅读消息时底栏滚出视口，
-消息可全屏展示；短会话（内容不足一屏）时输入框仍贴视口底，两种场景都正确。
+**English** | [简体中文](README.zh.md)
 
-纯客户端 CSS overlay，不改产品源码，卸载即完全还原。
+Mobile in-flow composer for the [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) (dsh) Web UI: on narrow screens (≤720px) the input bar and AI confirmation cards scroll with the page instead of pinning to the viewport floor — swipe up to read and the message transcript gets the full screen back.
 
-## 解决的问题
+A pure client-side CSS overlay. No product source is modified; removing the plugin restores the stock behavior exactly.
 
-官方布局里 composer 座位是 `position: sticky; bottom: 0`（见
-`packages/client/ui-conversation/src/client/skeleton/ConversationRoot.module.css`），
-输入框、ask_user_question 确认框、approval 权限框、plan review 全部渲染在同一个
-座位里，永远吸在视口底——手机上持续遮挡，可用阅读空间小。
+## The problem
 
-## 工作原理
+The stock Web UI pins the composer seat with `position: sticky; bottom: 0`. That seat hosts not only the input bar but also the interactive cards the AI raises mid-conversation — `ask_user_question` option cards, approval prompts, plan review. On a phone all of them stay glued to the bottom of the screen, permanently eating a chunk of the viewport while you scroll back through replies.
 
-注入一个 `<style>` 标签（`@media (max-width: 720px)`，断点对齐官方
-QuestionComposer），三条规则：
+## What it does
 
-1. 座位 `sticky → static`（排除 trajectory 等视图的 overlay absolute 座位）；
-2. active 阶段消息区 `flex-grow`：短会话时座位仍贴视口底，长会话规则自然失效；
-3. `--dsh-composer-height` 归零：回到底部按钮等浮动控件不再为吸底座位预留高度。
+On viewports ≤720px (the same breakpoint the official question card uses):
 
-选择器全部用官方稳定 `data-*` 属性（`data-composer-seat` / `data-conversation-scroll`
-/ `data-phase` / `data-slot`），不依赖 CSS Modules hash 类名；`:has` 不可用时规则
-整体失效，安全退回官方行为。已在 0.1.2-rc.1 装机产物上验证全部钩子存在。
+1. **The composer seat joins the document flow** — input bar and confirmation cards now live at the end of the transcript. Swipe up and they scroll out of view; the transcript becomes full-screen.
+2. **Short conversations still dock to the bottom** — when the transcript is shorter than one screen, the message area stretches so the composer stays flush with the viewport floor, visually identical to the stock behavior. Long conversations get the full-screen treatment.
+3. **Floating controls re-anchor** — the back-to-bottom button and turn navigator no longer reserve height for the sticky seat and sit close to the viewport floor again.
 
-## 安装（本机 web profile）
+Desktop (wide viewports) is completely unaffected.
+
+## How it works
+
+The plugin ships a browser half (`exports["./client"]`, declared via `dsh.client.platform: "web"`), discovered by the client-modules scanner and loaded from the boot manifest. It injects one `<style>` tag with `@media (max-width: 720px)` overrides and removes the tag on unload — fully reversible.
+
+All selectors target the product's stable `data-*` attributes (`data-composer-seat`, `data-conversation-scroll`, `data-phase`, `data-slot`), never CSS-Modules-hashed class names. The sticky-to-static switch is guarded with `:not(:has([data-conversation-composer-overlay]))` so views that own their composer overlay (e.g. trajectory) keep the official absolute positioning. On engines without `:has()` the rules degrade safely back to the stock sticky behavior.
+
+## Requirements
+
+- DeepSeek Harness Web profile (`dsh web`), any recent 0.1.x release
+- Selectors verified against 0.1.2-rc.1; they target product slot contracts that are stable within a version line but may need small updates after a major product revamp
+
+## Install
+
+### From npm
 
 ```sh
-cd ~/.dsh/profiles/web
-pnpm add file:/root/dev/dsh-mobile-flow
-# package.json 的 dsh.profile.bundles 数组追加 "dsh-mobile-flow"
-# 重启 dsh-web 生效
+dsh plugin --profile web add dsh-mobile-flow
 ```
 
-## 验证
+### From GitHub
 
-手机（或桌面 DevTools 窄窗口 ≤720px）打开会话：往下滑几屏，输入框/确认框应随
-消息滚出屏幕；确认框弹出时位于消息流末尾而非屏幕底部。宽视口（桌面）行为不变。
+```sh
+dsh plugin --profile web add github:imroc/dsh-mobile-flow
+```
 
-## 卸载
+Restart `dsh web`, then refresh the browser page.
 
-`package.json` 移除依赖与 bundles 项，重启 dsh-web。
+## Verify
+
+Open a session on a phone (or a desktop DevTools window narrowed to ≤720px): swipe up a few screens — the input bar and confirmation cards should scroll away with the messages. Trigger a tool that asks a question (or just check the input bar with a long transcript): the card sits at the end of the transcript instead of the screen bottom. Widen the window and the stock behavior returns.
+
+## Rollback
+
+- Bundle install: `dsh plugin --profile web remove dsh-mobile-flow`
+- Manual: remove the dependency and the `dsh.profile.bundles` entry, restart `dsh web`
+
+No product source is modified; upgrades do not overwrite it.
 
 ## License
 
