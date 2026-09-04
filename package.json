@@ -1,0 +1,33 @@
+{
+  "name": "dsh-mobile-flow",
+  "version": "0.1.0",
+  "description": "Mobile in-flow composer for the DeepSeek Harness Web UI: on narrow (≤720px) screens the input bar and AI confirmation cards scroll with the page instead of pinning to the viewport floor. Pure client-side CSS overlay.",
+  "license": "MIT",
+  "type": "module",
+  "main": "lib/index.js",
+  "exports": {
+    ".": "./lib/index.js",
+    "./client": "./lib/client.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib",
+    "cordis.patch.yml"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web"
+    }
+  },
+  "keywords": [
+    "deepseek-harness",
+    "dsh",
+    "dsh-plugin",
+    "mobile",
+    "web-ui",
+    "css"
+  ]
+}

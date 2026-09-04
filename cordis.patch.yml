@@ -1,0 +1,6 @@
+# Bundle patch: mount the plugin row. The row name must match this package
+# name; remove this insert block (or the bundle from the profile bundles list)
+# to restore the stock sticky-composer behavior.
+- insert:
+    - id: mobile-flow
+      name: 'dsh-mobile-flow'
