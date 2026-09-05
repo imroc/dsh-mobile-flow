@@ -20,6 +20,7 @@ On viewports ≤720px (the same breakpoint the official question card uses):
 4. **Slim edges** — the content-layer paddings that keep the transcript, header, input card, and confirmation cards well off the screen edges (16–32px per side) shrink to a slim 4px side inset (8px top), reclaiming most of the wasted width without the cramped feel of full-bleed. The page shell itself never adds whitespace; the gaps come entirely from these paddings.
 5. **No auto-focus on session switch** — the stock UI returns focus to the input box on every mount / session switch (a desktop convenience), which pops the on-screen keyboard over half the screen on phones. In narrow viewports the programmatic focus is swallowed; tapping the input box still focuses it normally.
 6. **Workspace row actions always visible** — the trailing buttons on workspace and session rows (the ⋯ menu with rename/delete and the ＋ for a new session in that workspace) surface on hover only; touch has no hover, so narrow viewports show them whenever the sidebar list is rendered.
+7. **Drawer semantics for the sidebar** — the stock layout keeps the conversation column rendered and interactive in a squeezed ~86px strip beside the expanded sidebar; taps aimed at long titles graze that strip, land on the input box, and pop the IME over half the screen (reading as the sidebar vanishing). While the sidebar is expanded on a narrow viewport that strip ignores pointers.
 
 Desktop (wide viewports) is completely unaffected.
 
