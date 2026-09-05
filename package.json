@@ -1,7 +1,7 @@
 {
   "name": "dsh-mobile-flow",
-  "version": "0.2.0",
-  "description": "Mobile in-flow composer for the DeepSeek Harness Web UI: on narrow (≤720px) screens the input bar and AI confirmation cards scroll with the page instead of pinning to the viewport floor, edges slim down, and session switches no longer auto-focus the input. Client-side CSS overlay plus a narrow-only focus guard.",
+  "version": "0.3.0",
+  "description": "Mobile in-flow composer for the DeepSeek Harness Web UI: on narrow (≤720px) screens the input bar and AI confirmation cards scroll with the page instead of pinning to the viewport floor, edges slim down, session switches no longer auto-focus the input, and workspace row actions stay visible. Client-side CSS overlay plus a narrow-only focus guard.",
   "license": "MIT",
   "type": "module",
   "main": "lib/index.js",
