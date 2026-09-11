@@ -85,6 +85,20 @@ localStorage.removeItem("dsh-mobile-flow:input");        // 恢复默认
 - 发送：点发按钮或按回车（回车等同官方发送手势）。
 - 拉宽窗口即恢复官方行为。
 
+## 兼容性加固（v0.5.1，HarmonyOS / ArkWeb 实测反馈）
+
+首版在**鸿蒙 7 自带浏览器（ArkWeb）**上暴露两个问题，已针对性加固：
+
+1. **点击输入区弹不出输入法**（只有少数位置能点中）——根因是**绘制/命中层级**：官方输入行所在的 `.grow` 是 `position: relative` 且 DOM 顺序在我们的 overlay seat 之后，同级堆叠下它盖在我们上面。实测（Chromium 探针 `document.elementFromPoint`）输入框 5 个采样点里 3 个命中的是官方容器而不是 textarea。
+   修复：seat 加 `z-index: 5` + 不透明背景；官方输入行额外 `pointer-events: none`；并在卡片捕获阶段接管 `pointerdown`（点在输入框范围内就聚焦 textarea），几何漂移也不会再点不中。
+2. **只能输入一个字符 / 输入法中断**——两条防御：
+   - **失焦前字段自持文本**：DSH 侧的非空草稿不再回写进正在聚焦的 textarea（IME 组合期间的回写会重置输入会话），只有「发送成功清空」这种外部清空才写回；
+   - **官方编辑器移出焦点/输入法候选**：接管期间给它加 `inert` + `aria-hidden`；若引擎不支持 `inert`，则用 `focusin` 守卫把被抢走的焦点抢回 textarea；几何写入改为幂等（无变化不写样式），避免无谓重排干扰 IME；textarea 显式 `user-select: text` / `touch-action: manipulation`（WebKit 系有继承 `user-select:none` 导致"键盘弹出但输不进去"的历史 bug）。
+
+**逃生开关**：输入框工具行新增小按钮 **「输入法✓ / 输入法✗」**（仅窄屏显示）——一键在原生输入框与官方输入框之间切换并记住选择；任何设备上都不会被卡死。
+
+**诊断面板**：URL 追加 `&dsh-mobile-input=debug` 后刷新，页面左上角出现事件面板（tap 坐标/命中目标、focus 变化、input/composition 事件、几何写入），用于无法开控制台的手机取证。
+
 ## 已知限制
 
 - 原生接管期间，输入区内联的 chip/装饰（如 `@` 引用装饰）不显示；进入命令 claim 阶段会自动切回官方编辑器。

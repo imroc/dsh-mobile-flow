@@ -107,10 +107,10 @@ const face = {
   submit() { calls.submit += 1 },
   state: { getSnapshot: () => snapshot, subscribe: fn => { subscribers.push(fn); return () => {} } },
 }
-let component = null
+const components = new Map()
 const slots = {
   inject: (key, cb) => { cb(); return () => {} },
-  register: (spec, Comp) => { component = Comp; return { spec } },
+  register: (spec, Comp) => { components.set(spec.name, Comp); return { spec } },
 }
 const scopedCtx = { get: name => name === 'conversation' ? { input: { for: () => face } } : undefined }
 const sessionsService = { scope: () => scopedCtx }
@@ -128,7 +128,10 @@ const ctx = new Proxy({
 })
 plugin.apply(ctx)
 
-check('plugin registered the overlay entry', component !== null)
+const component = components.get('conversation.input.overlay')
+const toggleComponent = components.get('conversation.input.left')
+check('plugin registered the overlay entry', component !== undefined)
+check('plugin registered the tool-row escape hatch', toggleComponent !== undefined)
 
 // --- render -------------------------------------------------------------
 const host = document.createElement('div')
@@ -211,6 +214,61 @@ check('enter is replayed onto the stock editor', replay !== null && replay.key =
   replay === null ? 'no replay seen' : `key=${replay.key}`)
 check('consumed replay does not fall back to a second submit', calls.submit === 1, `submit calls=${calls.submit}`)
 editorEl.removeEventListener('keydown', stockHandler)
+
+// The stock editor is taken out of the focus / IME tree while we own the field.
+check('stock editor neutralised (inert + aria-hidden)',
+  editorEl.hasAttribute('inert') && editorEl.getAttribute('aria-hidden') === 'true',
+  `inert=${editorEl.hasAttribute('inert')} aria-hidden=${editorEl.getAttribute('aria-hidden')}`)
+
+// While the field has focus it owns its text: an external non-empty write must
+// not clobber an IME session mid-typing.
+await act(async () => { area.focus() })
+const beforeExternal = area.value
+await act(async () => { face.setDraft('外部写入不应覆盖') })
+check('focused field ignores external non-empty writes', area.value === beforeExternal,
+  `value="${area.value}"`)
+// ...but a committed send still clears it.
+await act(async () => { face.setDraft('') })
+check('committed send still clears the focused field', area.value === '', `value="${area.value}"`)
+await act(async () => { area.blur() })
+await act(async () => { face.setDraft('失焦后应采纳') })
+check('blurred field adopts external writes', area.value === '失焦后应采纳', `value="${area.value}"`)
+
+// Tap forwarding: a tap anywhere in the input box focuses the field, whatever
+// the engine did with the layers above it.
+await act(async () => {
+  face.setDraft('')
+})
+document.body.focus()
+await act(async () => { area.blur() })
+const seat = host.querySelector('[data-mobile-input-wrap]')
+await act(async () => {
+  seat.dispatchEvent(new window.PointerEvent('pointerdown', { bubbles: true, cancelable: true, clientX: 5, clientY: 5 }))
+})
+check('tapping the seat focuses the field', document.activeElement === host.querySelector('[data-mobile-input]'),
+  `active=${(document.activeElement || {}).tagName}`)
+
+// The escape hatch flips the preference and hands the surface back.
+window.localStorage.removeItem('dsh-mobile-flow:input')
+const toggleHost = document.createElement('div')
+document.body.append(toggleHost)
+const toggleRoot = createRoot(toggleHost)
+await act(async () => { toggleRoot.render(React.createElement(toggleComponent, {})) })
+const button = toggleHost.querySelector('[data-mobile-input-toggle]')
+check('escape hatch renders on narrow viewports', button !== null && button.getAttribute('data-state') === 'on',
+  button === null ? 'missing' : `state=${button.getAttribute('data-state')}`)
+await act(async () => { button.dispatchEvent(new window.MouseEvent('click', { bubbles: true })) })
+check('escape hatch persists the preference',
+  window.localStorage.getItem('dsh-mobile-flow:input') === 'off',
+  String(window.localStorage.getItem('dsh-mobile-flow:input')))
+check('escape hatch unmounts the native textarea',
+  host.querySelector('[data-mobile-input]') === null && !card.hasAttribute('data-mobile-input-active'))
+await act(async () => { toggleRoot.unmount() })
+// back to the default preference for the remaining checks
+await act(async () => {
+  window.localStorage.removeItem('dsh-mobile-flow:input')
+  window.dispatchEvent(new window.Event('dsh-mobile-flow:preference'))
+})
 
 // phase flip hands the surface back to the stock editor
 await act(async () => {

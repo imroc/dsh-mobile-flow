@@ -85,6 +85,27 @@ Open a session on a phone (or a desktop DevTools window narrowed to ≤720px):
 - Send with the send button or Enter (same gesture as the stock composer).
 - Widen the window and the stock behavior returns.
 
+## Compatibility hardening (v0.5.1, after HarmonyOS / ArkWeb feedback)
+
+The first release broke on **HarmonyOS 7's built-in browser (ArkWeb)**: taps rarely opened the keyboard, and only
+one character could be typed. Both are addressed:
+
+1. **Taps not reaching the field** — a paint/hit-order bug: the stock input row lives in `.grow`
+   (`position: relative`) which comes *after* our overlay seat in DOM order, so at equal stacking level it painted
+   (and hit-tested) above the textarea; a `document.elementFromPoint` probe hit the stock container at 3 of 5 sample
+   points inside the input box. Fixed with `z-index: 5` + an opaque seat background, `pointer-events: none` on the
+   hidden row, and a capture-phase `pointerdown` on the card that focuses the field for taps anywhere inside it.
+2. **One character then nothing** — two defences: the DSH-side draft is never written back into a *focused* field
+   (that write resets an IME session; only a committed-send clear is applied), and the stock editor is taken out of
+   the focus/IME candidate tree (`inert` + `aria-hidden`, with a `focusin` guard for engines without `inert`);
+   geometry writes are idempotent and the field declares `user-select: text` / `touch-action: manipulation`.
+
+**Escape hatch**: a small tool-row button (**输入法✓ / 输入法✗**, narrow viewports only) swaps back to the stock
+input box and remembers the choice — no device can be left stuck.
+
+**Diagnostics**: append `&dsh-mobile-input=debug` to the URL to get an on-page event panel (tap coordinates and
+hit target, focus changes, input/composition events, geometry writes) for phones without a console.
+
 ## Known limits
 
 - While the takeover is active, inline chip/decoration rendering inside the draft (e.g. `@` reference decorations) is not shown; entering a command claim switches back to the stock editor automatically.
