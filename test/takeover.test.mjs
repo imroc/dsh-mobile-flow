@@ -101,6 +101,7 @@ const subscribers = []
 const face = {
   setDraft(value) {
     calls.setDraft.push(value)
+    if (typeof globalThis.__afterSetDraft === 'function') globalThis.__afterSetDraft(value)
     snapshot = { ...snapshot, draft: value, draftRev: snapshot.draftRev + 1 }
     for (const fn of subscribers) fn()
   },
@@ -170,7 +171,15 @@ await act(async () => {
   area.value = '移动端输入法测试'
   area.dispatchEvent(new window.Event('input', { bubbles: true }))
 })
-check('keystrokes mirrored into the input machine', calls.setDraft.at(-1) === '移动端输入法测试', JSON.stringify(calls.setDraft))
+check('typing is deferred (no DOM churn per keystroke)', calls.setDraft.length === 0, JSON.stringify(calls.setDraft))
+await act(async () => { area.dispatchEvent(new window.FocusEvent('focusout', { bubbles: true })) })
+check('blur commits the field into the input machine', calls.setDraft.at(-1) === '移动端输入法测试', JSON.stringify(calls.setDraft))
+// a trigger character must reach the machine at once (the `/` menu needs it)
+await act(async () => {
+  area.value = '/goal'
+  area.dispatchEvent(new window.Event('input', { bubbles: true }))
+})
+check('trigger character commits immediately', calls.setDraft.at(-1) === '/goal', JSON.stringify(calls.setDraft.at(-1)))
 
 // an external machine write lands in the textarea (send committed / restore)
 await act(async () => { face.setDraft('') })
@@ -183,7 +192,9 @@ await act(async () => {
   area.dispatchEvent(new window.Event('input', { bubbles: true }))
   area.dispatchEvent(new window.CompositionEvent('compositionend', { bubbles: true, data: '语音输入' }))
 })
-check('composition end mirrors the committed text', calls.setDraft.at(-1) === '语音输入', JSON.stringify(calls.setDraft.at(-1)))
+check('composition is deferred too', !calls.setDraft.includes('语音输入'), JSON.stringify(calls.setDraft))
+await act(async () => { area.dispatchEvent(new window.FocusEvent('focusout', { bubbles: true })) })
+check('composition text commits on blur', calls.setDraft.at(-1) === '语音输入', JSON.stringify(calls.setDraft.at(-1)))
 
 // Enter replays the stock send gesture (no Lexical here -> the face fallback)
 await act(async () => {
@@ -215,6 +226,31 @@ check('enter is replayed onto the stock editor', replay !== null && replay.key =
 check('consumed replay does not fall back to a second submit', calls.submit === 1, `submit calls=${calls.submit}`)
 editorEl.removeEventListener('keydown', stockHandler)
 
+const seat = host.querySelector('[data-mobile-input-wrap]')
+Object.defineProperty(seat, 'getBoundingClientRect', {
+  value: () => ({ left: 0, top: 0, right: 334, bottom: 68, width: 334, height: 68, x: 0, y: 0 }),
+})
+
+// Send-button bridge: a tap on a button the commit enables must still send.
+const sendButton = document.querySelector('[aria-label="发送消息"]')
+sendButton.getBoundingClientRect = () => ({ left: 300, top: 500, right: 350, bottom: 530, width: 50, height: 30, x: 300, y: 500 })
+let sendClicks = 0
+sendButton.addEventListener('click', () => { sendClicks += 1 })
+await act(async () => {
+  area.value = '桥接发送'
+  area.dispatchEvent(new window.Event('input', { bubbles: true }))
+})
+check('bridge: the typed text is still uncommitted before the tap', calls.setDraft.at(-1) !== '桥接发送', JSON.stringify(calls.setDraft.at(-1)))
+sendButton.disabled = true
+globalThis.__afterSetDraft = value => { if (value === '桥接发送') sendButton.disabled = false }
+await act(async () => {
+  seat.dispatchEvent(new window.PointerEvent('pointerdown', { bubbles: true, cancelable: true, clientX: 320, clientY: 515 }))
+})
+check('bridge: tapping the (disabled) send button commits the draft', calls.setDraft.at(-1) === '桥接发送', JSON.stringify(calls.setDraft.at(-1)))
+await act(async () => { await new Promise(r => setTimeout(r, 10)) })
+check('bridge: the tap is replayed on the button our commit enabled', sendClicks === 1, `clicks=${sendClicks}`)
+globalThis.__afterSetDraft = null
+
 // The stock editor is taken out of the focus / IME tree while we own the field.
 check('stock editor neutralised (inert + aria-hidden)',
   editorEl.hasAttribute('inert') && editorEl.getAttribute('aria-hidden') === 'true',
@@ -241,7 +277,6 @@ await act(async () => {
 })
 document.body.focus()
 await act(async () => { area.blur() })
-const seat = host.querySelector('[data-mobile-input-wrap]')
 await act(async () => {
   seat.dispatchEvent(new window.PointerEvent('pointerdown', { bubbles: true, cancelable: true, clientX: 5, clientY: 5 }))
 })

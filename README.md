@@ -85,7 +85,12 @@ Open a session on a phone (or a desktop DevTools window narrowed to ≤720px):
 - Send with the send button or Enter (same gesture as the stock composer).
 - Widen the window and the stock behavior returns.
 
-## Compatibility hardening (v0.5.1, after HarmonyOS / ArkWeb feedback)
+## Update discipline (this plugin's convention)
+
+1. **Hot updates only**: after a change, restart `dsh web` so the bundle revision is recomputed — client bundles are served `immutable`, and a new rev is what guarantees a phone refresh picks up the new code (never make the user clear caches).
+2. **Always keep an escape hatch**: anything that takes over stock UI behaviour must be revertible from the page itself (see the 输入法✓/✗ button below), so a bad build never blocks normal use.
+
+## Compatibility hardening (v0.5.1 / v0.5.2, after HarmonyOS / ArkWeb feedback)
 
 The first release broke on **HarmonyOS 7's built-in browser (ArkWeb)**: taps rarely opened the keyboard, and only
 one character could be typed. Both are addressed:
@@ -99,6 +104,13 @@ one character could be typed. Both are addressed:
    (that write resets an IME session; only a committed-send clear is applied), and the stock editor is taken out of
    the focus/IME candidate tree (`inert` + `aria-hidden`, with a `focusin` guard for engines without `inert`);
    geometry writes are idempotent and the field declares `user-select: text` / `touch-action: manipulation`.
+
+**v0.5.2 (second round of HarmonyOS feedback)**: with the takeover on, the keyboard closed after every character. Cause: mirroring the draft on **every keystroke** re-rendered the composer card and made Lexical rewrite the hidden editor's DOM — a strict engine drops the IME when the editing surface churns. Now:
+
+- **zero DOM churn while typing**: the field owns its text and only commits to the machine at commit points — Enter, blur, any tap outside the field (toolbar/send), page hide, unmount — plus immediately when a `/` or `@` trigger character is typed (the menus need the machine).
+- **the field grows itself**: the textarea autosizes (cap from the product's own 14-line token, floor read from the stock `min-height`: 36px docked / 52px hero) and a matching `min-height` floor is put on the stock row's box, because the absolutely positioned seat cannot make the card grow; it shrinks back after a send clears the draft.
+- **send-button bridge**: the stock send button is disabled while the machine draft is empty, so a tap outside the field commits first and, if that commit enabled the button, the tap is replayed onto it (one tap = send).
+- the stock editor is additionally forced to `contenteditable="false"` next to `inert` + `aria-hidden`, so the IME can only ever target the textarea; while the field is focused the seat never moves, the hidden scroller is left alone, and geometry is rounded to whole pixels (no sub-pixel style churn).
 
 **Escape hatch**: a small tool-row button (**输入法✓ / 输入法✗**, narrow viewports only) swaps back to the stock
 input box and remembers the choice — no device can be left stuck.
