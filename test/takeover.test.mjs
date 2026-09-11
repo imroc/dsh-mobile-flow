@@ -113,11 +113,19 @@ const slots = {
   register: (spec, Comp) => { component = Comp; return { spec } },
 }
 const scopedCtx = { get: name => name === 'conversation' ? { input: { for: () => face } } : undefined }
-const ctx = {
-  get: name => name === 'slots' ? slots : undefined,
+const sessionsService = { scope: () => scopedCtx }
+/* Cordis contexts throw when an undeclared service is read as a property
+   (`ctx.sessions` without inject); the proxy reproduces that so this test
+   catches the class of bug instead of shipping it. */
+const ctx = new Proxy({
+  get: name => name === 'slots' ? slots : (name === 'sessions' ? sessionsService : undefined),
   effect: fn => fn(),
-  sessions: { scope: () => scopedCtx },
-}
+}, {
+  get(target, prop) {
+    if (prop in target) return target[prop]
+    throw new Error(`cannot get property "${String(prop)}" without inject`)
+  },
+})
 plugin.apply(ctx)
 
 check('plugin registered the overlay entry', component !== null)
