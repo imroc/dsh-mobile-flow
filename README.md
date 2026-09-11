@@ -91,6 +91,18 @@ Open a session on a phone (or a desktop DevTools window narrowed to ≤720px):
 - Pasting an image is implemented by forwarding the paste to the official attachment intake; browsers that refuse a constructed paste event fall back to the paperclip picker.
 - IME candidate/assist behavior itself belongs to the system keyboard and is outside the plugin's control.
 
+## Development
+
+```sh
+npm install --no-save jsdom react@18 react-dom@18
+node test/takeover.test.mjs     # runs the real client bundle in a jsdom composer card
+```
+
+The test boots the shipped `lib/client.js`, renders the slot entry through React against a
+composer-card DOM, and asserts the render path, the draft mirror (typing / IME composition /
+machine-side writes), the Enter gesture, and the phase gate that hands the surface back to the
+stock editor. It exists because a broken entry renders nothing visible — only a console error.
+
 ## Rollback
 
 - Bundle install: `dsh plugin --profile web remove dsh-mobile-flow`

@@ -91,6 +91,17 @@ localStorage.removeItem("dsh-mobile-flow:input");        // 恢复默认
 - 移动端「粘贴图片」通过转发给官方附件入口实现，浏览器若不允许构造粘贴事件则退化为用回形针按钮选择文件。
 - 输入法自身的候选词栏/联想行为由系统输入法决定，插件无法控制。
 
+## 开发与自测
+
+```sh
+npm install --no-save jsdom react@18 react-dom@18
+node test/takeover.test.mjs     # 在 jsdom 里跑真实 client bundle
+```
+
+测试会加载真实的 `lib/client.js`，用 React 把 slot 组件渲染进一个 composer 卡片形状的 DOM，断言渲染路径、
+草稿镜像（打字 / 输入法组合 / 机器侧写入）、回车手势、以及"claim 阶段把输入面交还官方编辑器"的开关。
+存在的理由：slot 组件渲染出错时页面看不出异常，只有控制台报错。
+
 ## 回退
 
 - Bundle 安装：`dsh plugin --profile web remove dsh-mobile-flow`
