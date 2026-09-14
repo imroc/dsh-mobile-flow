@@ -139,7 +139,7 @@ localStorage.removeItem("dsh-mobile-flow:growth");       // 恢复默认
 **诊断（工具行「诊断」按钮，或 URL `?dsh-mobile-input=bench` / `,debug`）**：
 
 - ⚠️ **带 token 的 URL 会被 shell 重写掉 query**（插件 apply 之前 query 已被清空），所以手机上请用工具行的「诊断」按钮——它把请求写进 localStorage，刷新即生效；不带 token 的浏览器地址栏访问也可直接用 URL 参数。
-- **测试台**（bench）渲染 5 个变体字段 + 一个独立日志面板，每格各输 3-4 个字即可一次定位元凶：
+- **面板只占屏幕顶部**（变体默认收起，点「展开变体 A-E」打开），**下方真实输入框可直接打字**——先测真实输入框；要定位再展开变体，每格各输 3-4 个字：
   - **A** 裸 textarea（普通流，零 JS 写入）——基线；
   - **B** 零高容器内的 textarea（复刻 seat 结构，零 JS 写入）——测结构；
   - **C** 同 B + 每次按键都写高度——复刻 v0.5.2 的逐键 autosize（对照组）；
@@ -147,7 +147,7 @@ localStorage.removeItem("dsh-mobile-flow:growth");       // 恢复默认
   - **E** iframe 隔离文档里的裸 textarea——测页面级因素。
 - 判读：日志里哪一格后面跟着 `KEYBOARD ...px`，哪一格就是元凶（A/B/D 正常、C 收键盘 → 逐键写样式；连 A 都收 → 与插件无关）。
 - 另有「生产:提交点增高 / 逐键增高 / 固定高度」三个切换，可在真机上直接 A/B 生产字段的增高策略（默认提交点增高）。
-- **事件面板**（debug，与 bench 同时开启时只留 bench 的日志面板）记录 composer 的 tap 坐标/命中目标、focus 变化、input/composition、几何写入；两种面板都能一键复制日志。
+- **事件面板**（debug，与 bench 同时开启时只留 bench 的日志面板）记录 composer 的 tap 坐标/命中目标、focus 变化、input/composition、几何写入；两种面板都能一键复制日志。日志在**打字期间不刷新**（面板自己写 DOM 会污染取证），失焦、手动点「刷新」或键盘开合时才更新。
 
 **真机自测记录**：见 [knowledge 条目](https://gitee.com/imroc/dsh-agent) 与 `test/probe-live.mjs`（CDP 驱动真实页面，断言"打字期间页面零 DOM 变更"）。
 

@@ -160,14 +160,15 @@ input box and remembers the choice — no device can be left stuck.
 - ⚠️ **a tokenized URL has its query rewritten away by the shell** (it is gone before plugins apply), so on a phone
   use the tool-row button: it persists the request in localStorage and reloads. The URL parameter works for
   cookie-authenticated (token-less) loads.
-- the **bench** renders five variant fields plus its own log panel; a few characters typed into each one locate the
-  culprit in a single pass — **A** bare textarea (normal flow, no JS writes), **B** textarea inside a `height:0`
+- the panel only occupies the top of the screen (variants collapsed behind 「展开变体 A-E」), so **the real composer
+  field below it stays typeable — test that first**; expand the variants to localise the culprit — **A** bare textarea (normal flow, no JS writes), **B** textarea inside a `height:0`
   absolute container (the seat's shape), **C** B plus a style write per keystroke (the pre-0.6 autosize, the
   control), **D** B with logging only (the 0.6 behaviour), **E** bare textarea inside an iframe (a clean document).
   The variant followed by a `KEYBOARD ...px` line is the guilty one;
 - three switches (**生产: commit / live / none**) A/B the production field's growth policy on the device itself;
 - the **debug** panel records the composer's tap coordinates and hit target, focus changes, input/composition events
-  and geometry writes. Both panels copy their log with one tap.
+  and geometry writes. Both panels copy their log with one tap, and neither repaints while a field has focus (a panel
+  write would pollute the very evidence it collects).
 
 **Verified on a live page**: `test/probe-live.mjs` drives the real app over CDP (390x844) and asserts, among other
 things, that **typing writes nothing to the page DOM**.

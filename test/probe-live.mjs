@@ -184,6 +184,12 @@ check('the persisted switch drives diagnostics with no query string',
   persisted.search === '' && persisted.bench === 1 && persisted.variants === 4 && persisted.log === true,
   JSON.stringify(persisted))
 
+/* The variant fields are collapsed by default (the panel must not cover the
+   composer), so the probe opens them explicitly. */
+await page.ev(`document.querySelector('[data-mobile-input-bench-variants-toggle]').click()`)
+const expanded = await page.ev(`document.querySelector('[data-mobile-input-bench-variants]').hidden === false`)
+check('the variant toggle expands the bench fields', expanded === true)
+
 await page.ev(installAudit)
 const benchType = async (id) => {
   await page.ev(`(() => { const el = document.querySelector('[data-mobile-input-bench-id="${id}"]'); el.focus(); window.__audit = []; return true; })()`)

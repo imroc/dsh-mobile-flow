@@ -354,10 +354,18 @@ const panelBody = document.querySelector('[data-mobile-input-debug-body]')
 const benchLog = document.querySelector('[data-mobile-input-log]')
 const benchFields = [...document.querySelectorAll('[data-mobile-input-bench-field]')]
 check('bench suppresses the debug panel (one log surface at a time)', panelBody === null)
-check('bench log mounted in its own fixed panel', benchLog !== null)
-check('bench ships the four in-panel variants', benchFields.length === 4, String(benchFields.length))
+check('bench log lives inside the top panel (never covers the composer)', benchLog !== null
+  && benchLog.closest('[data-mobile-input-bench]') !== null)
+check('bench ships the five variants (four fields + the iframe)', benchFields.length === 4 && document.querySelector('[data-mobile-input-bench-frame]') !== null,
+  String(benchFields.length))
 check('bench ships the isolated-document variant', document.querySelector('[data-mobile-input-bench-frame]') !== null)
 check('bench exposes the growth switches', document.querySelector('[data-mobile-input-growth="live"]') !== null)
+const variantsBox = document.querySelector('[data-mobile-input-bench-variants]')
+check('the variant fields start collapsed (the real composer is the first test)', variantsBox.hidden === true)
+await act(async () => {
+  document.querySelector('[data-mobile-input-bench-variants-toggle]').dispatchEvent(new window.MouseEvent('click', { bubbles: true }))
+})
+check('the variant toggle reveals the fields', variantsBox.hidden === false)
 
 const field = host.querySelector('[data-mobile-input]')
 const growRow = card.querySelector('[data-input-scroll]').firstElementChild
