@@ -185,6 +185,21 @@ await act(async () => {
   area.dispatchEvent(new window.Event('input', { bubbles: true }))
 })
 check('trigger character commits immediately', calls.setDraft.at(-1) === '/goal', JSON.stringify(calls.setDraft.at(-1)))
+/* v0.6.0: characters typed AFTER the trigger must NOT be mirrored per keystroke
+   (that per-keystroke mirror is what closed the ArkWeb keyboard). */
+const draftsBefore = calls.setDraft.length
+await act(async () => {
+  area.value = '/goal now'
+  area.dispatchEvent(new window.Event('input', { bubbles: true }))
+})
+check('typing after a trigger does not mirror per keystroke (no slash loop)',
+  calls.setDraft.length === draftsBefore, JSON.stringify(calls.setDraft.slice(-3)))
+await act(async () => {
+  area.value = '/goal now/'
+  area.dispatchEvent(new window.Event('input', { bubbles: true }))
+})
+check('a NEW trigger character mirrors again', calls.setDraft.at(-1) === '/goal now/',
+  JSON.stringify(calls.setDraft.at(-1)))
 
 // an external machine write lands in the textarea (send committed / restore)
 await act(async () => { face.setDraft('') })
@@ -301,6 +316,8 @@ await act(async () => { button.dispatchEvent(new window.MouseEvent('click', { bu
 check('escape hatch persists the preference',
   window.localStorage.getItem('dsh-mobile-flow:input') === 'off',
   String(window.localStorage.getItem('dsh-mobile-flow:input')))
+const copyChip = toggleHost.querySelector('[data-mobile-input-copy]')
+check('tool row carries a copy-log chip while diagnostics are on', copyChip !== null)
 const diagnosticsChip = toggleHost.querySelector('[data-mobile-input-diagnostics]')
 check('tool row carries the diagnostics switch', diagnosticsChip !== null
   && diagnosticsChip.getAttribute('data-state') === 'on',

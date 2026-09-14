@@ -41,15 +41,21 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 const page = await open({ token })
 
 /* Watch every mutation in the page, tagging the ones inside our surfaces. */
+/* Watch every mutation in the page, tagged by surface. The composer CARD is
+   what matters (it is the surface the ArkWeb IME watches); the rest of the page
+   is recorded too, but only reported — a live session streams its transcript,
+   which mutates the page while the user types and is not ours to control. */
 const installAudit = `(() => {
   window.__audit = [];
   new MutationObserver(records => {
     for (const record of records) {
       const el = record.target;
+      const inSurface = el.closest !== undefined && el.closest('[data-composer-card]') !== null;
       const inSeat = el.closest !== undefined && el.closest('[data-mobile-input-wrap]') !== null;
       const inSurfaces = el.closest !== undefined && el.closest('[data-mobile-input-bench], [data-mobile-input-log], [data-mobile-input-debug]') !== null;
       const row = el.parentElement !== null && el.parentElement.hasAttribute('data-input-scroll');
-      window.__audit.push((inSeat ? 'SEAT ' : row ? 'ROW ' : inSurfaces ? 'PANEL ' : '') + record.type + ':' + (record.attributeName ?? el.tagName));
+      window.__audit.push((inSeat ? 'SEAT ' : row ? 'ROW ' : inSurfaces ? 'PANEL ' : inSurface ? 'CARD ' : 'OUTSIDE ')
+        + record.type + ':' + (record.attributeName ?? el.tagName));
     }
   }).observe(document.body, { attributes: true, childList: true, characterData: true, subtree: true });
   return true;
@@ -109,7 +115,11 @@ console.log('typing audit:', JSON.stringify(typed.slice(0, 10)))
 check('the field holds every typed character', st.area.value === '你好ab', JSON.stringify(st.area.value))
 check('focus survives the whole run of keystrokes', st.area.focused === true)
 check('typing writes NOTHING to the seat or the stock row', seatWrites.length === 0, JSON.stringify(seatWrites))
-check('typing writes nothing anywhere in the page', typed.length === 0, `${typed.length} records`)
+const cardWrites = typed.filter((line) => line.startsWith('CARD ') || line.startsWith('SEAT ') || line.startsWith('ROW '))
+check('typing writes nothing inside the composer card (the ArkWeb surface)',
+  cardWrites.length === 0, `${cardWrites.length} of ${typed.length} records: ${JSON.stringify(cardWrites.slice(0, 4))}`)
+console.log('page-wide records during typing:', typed.length,
+  '(outside the card:', typed.filter((line) => line.startsWith('OUTSIDE ')).length, '- transcript streaming)')
 check('the field never collapses (no height:0 probe)', heights.every((h) => h !== '0px'), JSON.stringify(heights))
 check('the field keeps one fixed height while typing', new Set(heights).size === 1, JSON.stringify(heights))
 check('the machine draft stays empty while typing (deferred mirror)', st.machine === '', JSON.stringify(st.machine))
@@ -136,6 +146,52 @@ check('the commit point applies the content height', st.area.height !== heights[
 check('the commit settle does write (focus is gone by then)',
   afterCommit.some((line) => line.startsWith('SEAT ') || line.startsWith('ROW ')),
   JSON.stringify(afterCommit.slice(0, 6)))
+
+/* ── phase 1b: the slash case (the reported ArkWeb trigger) ───────────── */
+journal('phase 1b — a slash-prefixed draft')
+await page.ev(`(() => {
+  const area = document.querySelector('[data-mobile-input]');
+  area.focus();
+  area.value = '';
+  area.dispatchEvent(new Event('input', { bubbles: true }));
+  return true;
+})()`)
+await sleep(400)
+await page.ev('window.__audit = []')
+await type('/')
+await sleep(500)
+const afterSlash = await page.ev(state)
+check('the trigger character itself reaches the machine', afterSlash.machine === '/', JSON.stringify(afterSlash.machine))
+await page.ev('window.__audit = []')
+/* Once the command menu is open, synthesized key events do NOT insert into the
+   field (Chromium's editing context for injected keys is not the field's
+   anymore) — the IME-style path does, and that is what a real keyboard uses. */
+for (const ch of ['g', 'o', 'a', 'l']) {
+  await page.send('Input.insertText', { text: ch })
+  await sleep(250)
+}
+const slashAudit = await page.ev('window.__audit')
+const afterCommand = await page.ev(state)
+console.log('slash typing audit:', JSON.stringify(slashAudit.slice(0, 8)))
+check('the field holds the whole command', afterCommand.area.value === '/goal', JSON.stringify(afterCommand.area.value))
+check('typing after the trigger is NOT mirrored per keystroke', afterCommand.machine === '/',
+  JSON.stringify(afterCommand.machine))
+check('no plugin writes while typing a slash command',
+  slashAudit.filter((line) => line.startsWith('SEAT ') || line.startsWith('ROW ')).length === 0,
+  JSON.stringify(slashAudit.slice(0, 6)))
+check('nothing collapses the field while typing a slash command',
+  afterCommand.area.focused === true, `focused=${afterCommand.area.focused} h=${afterCommand.area.height}`)
+const menu = await page.ev(`(() => {
+  const menu = document.querySelector('._3e4SsG_menu');
+  return { mounted: menu !== null, visible: menu !== null && menu.getBoundingClientRect().height > 0,
+           options: document.querySelectorAll('[role="option"]').length };
+})()`)
+check('the command menu opens on the trigger character', menu.mounted === true, JSON.stringify(menu))
+console.log('menu:', JSON.stringify(menu))
+await page.ev(`document.querySelector('[data-mobile-input]').blur()`)
+await sleep(700)
+check('blur commits the whole command', (await page.ev(state)).machine === '/goal',
+  JSON.stringify((await page.ev(state)).machine))
 
 /* Clear the draft this probe typed, so the session is left as it was found. */
 await page.ev(`(() => {
@@ -197,7 +253,9 @@ const benchType = async (id) => {
   const records = await page.ev('window.__audit')
   await page.ev(`document.querySelector('[data-mobile-input-bench-id="${id}"]').blur()`)
   await sleep(200)
-  return records
+  /* Only OUR surfaces count: a live session keeps mutating its transcript
+     outside the bench (the 'OUTSIDE' tag), which no variant can control. */
+  return records.filter((line) => !line.startsWith('OUTSIDE '))
 }
 const bare = await benchType('A')
 const zeroWrite = await benchType('D')

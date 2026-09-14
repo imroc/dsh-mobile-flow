@@ -152,6 +152,25 @@ DOM writes**.
 - **keyboard transitions become facts**: window / visualViewport height changes (how ArkWeb reports the on-screen
   keyboard) are timestamped next to the input events.
 
+**v0.6.1 (fourth round, the slash case)**: on the device only ONE case still dropped the keyboard — a draft
+starting with `/` (how skills are invoked by hand); plain text was already fine. The cause was the plugin's single
+per-keystroke exception: `TRIGGER.test(fieldValue)` asked "does the text contain `/`", so **any draft containing a
+slash mirrored the machine on every keystroke after it** — re-rendering the composer card, refreshing the command
+menu and rewriting the hidden editor's DOM once per character. Now:
+
+- **only the trigger character itself is mirrored** (typed or deleted), because the menu needs the machine; the
+  characters typed after it stay in the field until a commit point;
+- **nothing is mirrored mid-composition** (the trigger count captured at `compositionstart` decides at the end);
+- the diagnostics panel gained **「触发符:仅触发 / 逐键 / 关」** switches to A/B this on the device (the old
+  per-keystroke behaviour is one tap away, which is also how the cause was confirmed);
+- the tool row gained a **「复制日志」** chip whenever diagnostics are on, and the log now records
+  `CHURN while focused` lines — app-side mutations (menu, Lexical) under a live IME are logged too, so "our writes"
+  and "the app re-rendering" can be told apart from a log alone.
+
+**Known trade-off**: the slash menu still opens, but its list may not filter live while you type (the filter reads the
+machine draft, which is deliberately stale until a commit point). Switch to 「触发符:逐键」 for live filtering, at the
+cost of the keyboard dropping on that device.
+
 **Escape hatch**: a small tool-row button (**输入法✓ / 输入法✗**, narrow viewports only) swaps back to the stock
 input box and remembers the choice — no device can be left stuck.
 
