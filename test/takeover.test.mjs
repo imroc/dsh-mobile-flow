@@ -35,7 +35,12 @@ const dom = new JSDOM(`<!doctype html><html><head></head><body>
     </div>
     <div class="row"><button aria-label="发送消息" disabled>send</button></div>
   </div>
-</body></html>`, { url: 'http://127.0.0.1:3080/', pretendToBeVisual: true })
+</body></html>`, {
+  /* Diagnostics on: this run also covers the debug panel and the bench, which
+     are the only read-out on a phone (see the last section). */
+  url: 'http://127.0.0.1:3080/?dsh-mobile-input=debug,bench',
+  pretendToBeVisual: true,
+})
 
 const { window } = dom
 const { document } = window
@@ -296,6 +301,15 @@ await act(async () => { button.dispatchEvent(new window.MouseEvent('click', { bu
 check('escape hatch persists the preference',
   window.localStorage.getItem('dsh-mobile-flow:input') === 'off',
   String(window.localStorage.getItem('dsh-mobile-flow:input')))
+const diagnosticsChip = toggleHost.querySelector('[data-mobile-input-diagnostics]')
+check('tool row carries the diagnostics switch', diagnosticsChip !== null
+  && diagnosticsChip.getAttribute('data-state') === 'on',
+  diagnosticsChip === null ? 'missing' : `state=${diagnosticsChip.getAttribute('data-state')}`)
+window.localStorage.setItem('dsh-mobile-flow:diagnostics', 'both')
+await act(async () => { diagnosticsChip.dispatchEvent(new window.MouseEvent('click', { bubbles: true })) })
+check('the diagnostics switch clears the persisted request',
+  window.localStorage.getItem('dsh-mobile-flow:diagnostics') === null,
+  String(window.localStorage.getItem('dsh-mobile-flow:diagnostics')))
 check('escape hatch unmounts the native textarea',
   host.querySelector('[data-mobile-input]') === null && !card.hasAttribute('data-mobile-input-active'))
 await act(async () => { toggleRoot.unmount() })
@@ -322,6 +336,122 @@ const restored = host.querySelector('[data-mobile-input]')
 check('returning to plain re-mounts the textarea with the machine draft',
   restored !== null && restored.value === '恢复的草稿', restored === null ? 'missing' : `value="${restored.value}"`)
 check('card marker restored', card.hasAttribute('data-mobile-input-active'))
+
+/* ── v0.6: the typing path must not touch the DOM ───────────────────────── */
+
+/** Collect synchronous DOM-mutation records for one observation window. */
+const watcher = el => {
+  const collected = []
+  const observer = new window.MutationObserver(records => { collected.push(...records) })
+  observer.observe(el, { attributes: true, childList: true, characterData: true, subtree: true })
+  return {
+    take: () => collected.concat(observer.takeRecords()),
+    stop: () => observer.disconnect(),
+  }
+}
+
+const panelBody = document.querySelector('[data-mobile-input-debug-body]')
+const benchLog = document.querySelector('[data-mobile-input-log]')
+const benchFields = [...document.querySelectorAll('[data-mobile-input-bench-field]')]
+check('bench suppresses the debug panel (one log surface at a time)', panelBody === null)
+check('bench log mounted in its own fixed panel', benchLog !== null)
+check('bench ships the four in-panel variants', benchFields.length === 4, String(benchFields.length))
+check('bench ships the isolated-document variant', document.querySelector('[data-mobile-input-bench-frame]') !== null)
+check('bench exposes the growth switches', document.querySelector('[data-mobile-input-growth="live"]') !== null)
+
+const field = host.querySelector('[data-mobile-input]')
+const growRow = card.querySelector('[data-input-scroll]').firstElementChild
+window.localStorage.removeItem('dsh-mobile-flow:growth')
+window.dispatchEvent(new window.Event('dsh-mobile-flow:growth-change'))
+
+await act(async () => { field.focus() })
+/* A grown content height that must NOT be applied while the field has focus. */
+Object.defineProperty(field, 'scrollHeight', { value: 120, configurable: true })
+const pageWatch = watcher(document.documentElement)
+const logBefore = benchLog.textContent
+for (const text of ['一', '一二', '一二三', '一二三四']) {
+  await act(async () => {
+    field.value = text
+    field.dispatchEvent(new window.Event('input', { bubbles: true }))
+  })
+}
+const typed = pageWatch.take()
+check('typing writes NOTHING to the page DOM (the 0.6 invariant)', typed.length === 0,
+  typed.map(r => `${r.type}:${r.attributeName ?? r.target.tagName}`).join(',') || 'clean')
+check('typing never resizes the field (no height:0 probe, no autosize)', field.style.height !== '0px' && field.style.height !== '120px',
+  `h=${field.style.height}`)
+check('typing does not repaint the bench log', benchLog.textContent === logBefore)
+check('field keeps every typed character', field.value === '一二三四', field.value)
+check('nothing stole focus while typing', document.activeElement === field,
+  `active=${(document.activeElement || {}).tagName}`)
+pageWatch.stop()
+
+await act(async () => { field.blur() })
+await act(async () => { await new Promise(r => setTimeout(r, 5)) })
+check('blur commits the typing into the machine', calls.setDraft.at(-1) === '一二三四', JSON.stringify(calls.setDraft.at(-1)))
+check('the commit point applies the content height', field.style.height === '120px', `h=${field.style.height}`)
+check('the commit point grows the stock row too', growRow.style.minHeight === '120px', `min=${growRow.style.minHeight}`)
+check('the log panel repaints once typing stops', benchLog.textContent !== logBefore)
+
+/* Typing again with yet another content height: still nothing may move. */
+await act(async () => { field.focus() })
+Object.defineProperty(field, 'scrollHeight', { value: 200, configurable: true })
+await act(async () => {
+  field.value = '一二三四五'
+  field.dispatchEvent(new window.Event('input', { bubbles: true }))
+})
+check('a second typing round keeps the settled height', field.style.height === '120px', `h=${field.style.height}`)
+await act(async () => { field.blur() })
+await act(async () => { await new Promise(r => setTimeout(r, 5)) })
+check('the next commit point picks the new height up', field.style.height === '200px', `h=${field.style.height}`)
+
+/* The machine draft is stale while typing: an EMPTY publish is not a user
+   clear and must not wipe the field. */
+await act(async () => { field.focus() })
+await act(async () => {
+  field.value = '未提交的文字'
+  field.dispatchEvent(new window.Event('input', { bubbles: true }))
+})
+await act(async () => { face.setDraft('') })
+check('an empty machine publish cannot wipe uncommitted typing', field.value === '未提交的文字', field.value)
+await act(async () => { field.blur() })
+await act(async () => { await new Promise(r => setTimeout(r, 5)) })
+check('blur then publishes the preserved text', calls.setDraft.at(-1) === '未提交的文字', JSON.stringify(calls.setDraft.at(-1)))
+
+/* Bench control experiment: only variant C may write to the DOM while typing. */
+const benchWatchers = benchFields.map(watcher)
+await act(async () => {
+  for (const el of benchFields) {
+    el.focus()
+    el.value = '测'
+    el.dispatchEvent(new window.Event('input', { bubbles: true }))
+  }
+})
+const benchWrites = benchWatchers.map(w => w.take().length)
+check('bench C reproduces the per-keystroke style write', benchWrites[2] > 0, JSON.stringify(benchWrites))
+check('bench A/B/D write nothing on input', benchWrites[0] === 0 && benchWrites[1] === 0 && benchWrites[3] === 0,
+  JSON.stringify(benchWrites))
+await act(async () => { for (const el of benchFields) el.blur() })
+benchWatchers.forEach(w => w.stop())
+check('the bench log repaints once typing stops', benchLog.textContent.includes('A input 1 chars'),
+  JSON.stringify(benchLog.textContent.split('\n').slice(-3)))
+
+/* Keyboard transitions are the evidence a phone report is made of. */
+Object.defineProperty(window, 'innerHeight', { value: 400, configurable: true })
+await act(async () => { window.dispatchEvent(new window.Event('resize')) })
+check('keyboard transitions land in the diary', benchLog.textContent.includes('KEYBOARD 768->400px'),
+  JSON.stringify(benchLog.textContent.split('\n').slice(-2)))
+
+/* The bench growth switch drives the production field's policy. */
+const liveButton = document.querySelector('[data-mobile-input-growth="live"]')
+await act(async () => { liveButton.dispatchEvent(new window.MouseEvent('click', { bubbles: true })) })
+check('bench growth switch persists the mode',
+  window.localStorage.getItem('dsh-mobile-flow:growth') === 'live',
+  String(window.localStorage.getItem('dsh-mobile-flow:growth')))
+await act(async () => {
+  window.localStorage.removeItem('dsh-mobile-flow:growth')
+  window.dispatchEvent(new window.Event('dsh-mobile-flow:growth-change'))
+})
 
 console.log(`\n==== ${failures.length === 0 ? 'ALL CHECKS PASSED' : `${failures.length} FAILED`} ====`)
 for (const f of failures) console.log(`  FAIL: ${f}`)

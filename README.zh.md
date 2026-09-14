@@ -76,6 +76,22 @@ localStorage.removeItem("dsh-mobile-flow:input");        // 恢复默认
 
 一次性覆盖也可用 URL 参数：`?dsh-mobile-input=1`（强制）/`=0`（关闭）。
 
+诊断开关同理（持久化，点工具行「诊断」按钮即可，无需手打 URL）：
+
+```js
+localStorage.setItem("dsh-mobile-flow:diagnostics", "bench");  // 真机测试台
+localStorage.setItem("dsh-mobile-flow:diagnostics", "debug");  // 事件面板
+localStorage.removeItem("dsh-mobile-flow:diagnostics");        // 关闭
+```
+
+增高策略（默认 `commit`：只在提交点增高）：
+
+```js
+localStorage.setItem("dsh-mobile-flow:growth", "live");  // 逐键增高（v0.5.2 行为，A/B 用）
+localStorage.setItem("dsh-mobile-flow:growth", "none");  // 永远固定高度
+localStorage.removeItem("dsh-mobile-flow:growth");       // 恢复默认
+```
+
 ## 验证
 
 手机上（或桌面 DevTools 缩到 ≤720px 窄窗）打开一个会话：
@@ -83,6 +99,8 @@ localStorage.removeItem("dsh-mobile-flow:input");        // 恢复默认
 - 往上滑几屏——输入框和确认卡片应随消息滚出屏幕。
 - 输入区应是原生 textarea（页面里存在 `[data-mobile-input]`）。用输入法打字/语音输入，文字不应被自动清除。
 - 发送：点发按钮或按回车（回车等同官方发送手势）。
+- 工具行应有**两个小按钮**：「输入法✓」（逃生通道）与「诊断」（开测试台）。
+- 关键回归点（v0.6.0）：**打字期间不要有任何布局跳动**——字段高度在聚焦期间不变，失焦后才按内容长高。
 - 拉宽窗口即恢复官方行为。
 
 ## 更新纪律（本插件的约定）
@@ -90,7 +108,7 @@ localStorage.removeItem("dsh-mobile-flow:input");        // 恢复默认
 1. **必须支持热更新**：改完即重启 dsh-web 重算 bundle rev（客户端插件产物带 `immutable` 缓存，换 rev 才能保证手机刷新拿到新码），不要让用户自己清缓存。
 2. **必须预留逃生通道**：凡是接管官方 UI 行为的功能，都要能在页面上一条操作回退（见下文「输入法✓/✗」按钮），改坏了不影响正常使用。
 
-## 兼容性加固（v0.5.1 / v0.5.2，HarmonyOS / ArkWeb 实测反馈）
+## 兼容性加固（v0.5.1 / v0.5.2 / v0.6.0，HarmonyOS / ArkWeb 实测反馈）
 
 首版在**鸿蒙 7 自带浏览器（ArkWeb）**上暴露两个问题，已针对性加固：
 
@@ -108,9 +126,30 @@ localStorage.removeItem("dsh-mobile-flow:input");        // 恢复默认
 - 官方编辑器除 `inert` + `aria-hidden` 外，再强制 `contenteditable="false"`（把 IME 的可编辑候选集只留 textarea）；
 - 打字聚焦期间不改 seat 的 left/top、不动隐藏滚动容器（避免编辑面下的布局位移触发收键盘），几何像素取整避免亚像素抖动反复写样式。
 
+**v0.6.0（鸿蒙反馈第三轮，当前）**：把镜像挪出打字路径仍然不够——**逐键的几何写入**才是收键盘的触发点：`autosize` 每按一次键就把字段 `style.height` 置 `0px`、读 `scrollHeight`、再写回（聚焦中的可编辑面在每个按键上塌陷一次），seat 还会随卡片盒子重新对齐。现在这是一条硬约束：**字段有焦点时插件零 DOM 写入**。
+
+- **打字期间尺寸固定**：高度锁在产品自身的下限（停靠 36px / 新会话 hero 52px），超出内容在字段内滚动；
+- **只有提交点才动 DOM**：失焦、回车、页面隐藏、组件卸载、阶段切换时才做测量 / 重对齐 / chrome 同步（placeholder、只读态）；几何测量改为非破坏式（不再有 `height: 0px` 探针）；失焦后按内容长高并同步官方输入行的 `min-height`，发送清空后缩回（发送清空由用户显式动作触发，是唯一在聚焦状态下写入的场景）；
+- **未提交的文字不会被空草稿冲掉**：打字期间机器草稿本来就是旧的，空发布不再被当成"用户清空了输入框"；
+- **诊断面板不再自我扰动**：日志先进内存缓冲，只在失焦 / 手动刷新 / 键盘开合时渲染——旧面板每事件写一次 DOM，本身就是收键盘的嫌疑；
+- **键盘开合进入日志**：记录 window / visualViewport 高度变化（ArkWeb 用它上报软键盘），"键盘在某次按键后收起"于是变成有时间戳的事实。
+
 **逃生开关**：输入框工具行新增小按钮 **「输入法✓ / 输入法✗」**（仅窄屏显示）——一键在原生输入框与官方输入框之间切换并记住选择；任何设备上都不会被卡死。
 
-**诊断面板**：URL 追加 `&dsh-mobile-input=debug` 后刷新，页面左上角出现事件面板（tap 坐标/命中目标、focus 变化、input/composition 事件、几何写入），用于无法开控制台的手机取证。
+**诊断（工具行「诊断」按钮，或 URL `?dsh-mobile-input=bench` / `,debug`）**：
+
+- ⚠️ **带 token 的 URL 会被 shell 重写掉 query**（插件 apply 之前 query 已被清空），所以手机上请用工具行的「诊断」按钮——它把请求写进 localStorage，刷新即生效；不带 token 的浏览器地址栏访问也可直接用 URL 参数。
+- **测试台**（bench）渲染 5 个变体字段 + 一个独立日志面板，每格各输 3-4 个字即可一次定位元凶：
+  - **A** 裸 textarea（普通流，零 JS 写入）——基线；
+  - **B** 零高容器内的 textarea（复刻 seat 结构，零 JS 写入）——测结构；
+  - **C** 同 B + 每次按键都写高度——复刻 v0.5.2 的逐键 autosize（对照组）；
+  - **D** 同 B + 只记录、不写任何 DOM——v0.6 的行为；
+  - **E** iframe 隔离文档里的裸 textarea——测页面级因素。
+- 判读：日志里哪一格后面跟着 `KEYBOARD ...px`，哪一格就是元凶（A/B/D 正常、C 收键盘 → 逐键写样式；连 A 都收 → 与插件无关）。
+- 另有「生产:提交点增高 / 逐键增高 / 固定高度」三个切换，可在真机上直接 A/B 生产字段的增高策略（默认提交点增高）。
+- **事件面板**（debug，与 bench 同时开启时只留 bench 的日志面板）记录 composer 的 tap 坐标/命中目标、focus 变化、input/composition、几何写入；两种面板都能一键复制日志。
+
+**真机自测记录**：见 [knowledge 条目](https://gitee.com/imroc/dsh-agent) 与 `test/probe-live.mjs`（CDP 驱动真实页面，断言"打字期间页面零 DOM 变更"）。
 
 ## 已知限制
 
@@ -122,8 +161,12 @@ localStorage.removeItem("dsh-mobile-flow:input");        // 恢复默认
 
 ```sh
 npm install --no-save jsdom react@18 react-dom@18
-node test/takeover.test.mjs     # 在 jsdom 里跑真实 client bundle
+node test/takeover.test.mjs                          # jsdom：渲染 + 打字路径（含"打字期零 DOM 写入"断言）
+node test/facts-probe.mjs <token>                    # 真实页面：DOM/CSS 结构与引擎能力
+node test/probe-live.mjs <token>                     # 真实页面：接管契约 + 诊断开关（CDP，390x844 移动视口）
 ```
+
+token 取自 `journalctl --user -u dsh-web | grep -o 'token=[A-Za-z0-9_-]*' | tail -1`（每次重启换新；单次有效，探针只用一次）。
 
 测试会加载真实的 `lib/client.js`，用 React 把 slot 组件渲染进一个 composer 卡片形状的 DOM，断言渲染路径、
 草稿镜像（打字 / 输入法组合 / 机器侧写入）、回车手势、以及"claim 阶段把输入面交还官方编辑器"的开关。

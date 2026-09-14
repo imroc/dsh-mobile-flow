@@ -76,6 +76,22 @@ localStorage.removeItem("dsh-mobile-flow:input");        // back to default
 
 One-shot override: `?dsh-mobile-input=1` (force) / `=0` (off).
 
+Diagnostics have their own persisted switch (the tool-row 诊断 button writes it; no URL typing needed):
+
+```js
+localStorage.setItem("dsh-mobile-flow:diagnostics", "bench");  // device test bench
+localStorage.setItem("dsh-mobile-flow:diagnostics", "debug");  // event panel
+localStorage.removeItem("dsh-mobile-flow:diagnostics");        // off
+```
+
+Growth policy (`commit` by default: resize at commit points only):
+
+```js
+localStorage.setItem("dsh-mobile-flow:growth", "live");  // per-keystroke growth (v0.5.2 behaviour, for A/B)
+localStorage.setItem("dsh-mobile-flow:growth", "none");  // always the floor height
+localStorage.removeItem("dsh-mobile-flow:growth");       // back to default
+```
+
 ## Verify
 
 Open a session on a phone (or a desktop DevTools window narrowed to ≤720px):
@@ -83,6 +99,9 @@ Open a session on a phone (or a desktop DevTools window narrowed to ≤720px):
 - Swipe up a few screens: the input bar and confirmation cards scroll away with the messages.
 - The draft surface should be a native textarea (the page carries `[data-mobile-input]`). Type with an IME or voice input: text must not be cleared.
 - Send with the send button or Enter (same gesture as the stock composer).
+- The tool row shows **two chips**: 「输入法✓」(the escape hatch) and 「诊断」(open the test bench).
+- The v0.6.0 regression to watch: **no layout movement while typing** — the field's height stays put until focus
+  leaves, and only then follows the content.
 - Widen the window and the stock behavior returns.
 
 ## Update discipline (this plugin's convention)
@@ -90,7 +109,7 @@ Open a session on a phone (or a desktop DevTools window narrowed to ≤720px):
 1. **Hot updates only**: after a change, restart `dsh web` so the bundle revision is recomputed — client bundles are served `immutable`, and a new rev is what guarantees a phone refresh picks up the new code (never make the user clear caches).
 2. **Always keep an escape hatch**: anything that takes over stock UI behaviour must be revertible from the page itself (see the 输入法✓/✗ button below), so a bad build never blocks normal use.
 
-## Compatibility hardening (v0.5.1 / v0.5.2, after HarmonyOS / ArkWeb feedback)
+## Compatibility hardening (v0.5.1 / v0.5.2 / v0.6.0, after HarmonyOS / ArkWeb feedback)
 
 The first release broke on **HarmonyOS 7's built-in browser (ArkWeb)**: taps rarely opened the keyboard, and only
 one character could be typed. Both are addressed:
@@ -112,11 +131,46 @@ one character could be typed. Both are addressed:
 - **send-button bridge**: the stock send button is disabled while the machine draft is empty, so a tap outside the field commits first and, if that commit enabled the button, the tap is replayed onto it (one tap = send).
 - the stock editor is additionally forced to `contenteditable="false"` next to `inert` + `aria-hidden`, so the IME can only ever target the textarea; while the field is focused the seat never moves, the hidden scroller is left alone, and geometry is rounded to whole pixels (no sub-pixel style churn).
 
+**v0.6.0 (third round of HarmonyOS feedback, current)**: taking the mirror off the typing path was still not
+enough — the **per-keystroke geometry writes** were the trigger. `autosize` set the field to `height: 0px` on every
+key, read `scrollHeight`, wrote the height back (the focused editable collapsed once per keystroke), and the seat
+re-aligned itself to the card's box. The rule is now absolute: **while the field has focus the plugin performs zero
+DOM writes**.
+
+- **one fixed height while typing**: the field keeps the product's own floor (36px docked / 52px blank-session hero)
+  and scrolls internally;
+- **only commit points touch the DOM**: blur, Enter, page hide, unmount, phase flips — that is when measurement,
+  re-alignment and chrome syncing (placeholder, read-only) happen. Measurement is non-destructive (the
+  `height: 0px` probe is gone); after blur the field grows to its content, keeps the stock row's `min-height` in
+  step, and shrinks back when a send clears the draft (the committed send is the only write performed on a focused
+  field — it follows an explicit user action);
+- **uncommitted text can no longer be wiped by an empty draft**: the machine draft is stale by design while typing,
+  so an empty publish is no longer read as "the user cleared the field";
+- **the diagnostics panel stops perturbing what it measures**: lines land in a memory buffer and are painted only on
+  blur, on demand, or on a keyboard transition — the old panel wrote the DOM on every event, making it a suspect in
+  the very bug it reported;
+- **keyboard transitions become facts**: window / visualViewport height changes (how ArkWeb reports the on-screen
+  keyboard) are timestamped next to the input events.
+
 **Escape hatch**: a small tool-row button (**输入法✓ / 输入法✗**, narrow viewports only) swaps back to the stock
 input box and remembers the choice — no device can be left stuck.
 
-**Diagnostics**: append `&dsh-mobile-input=debug` to the URL to get an on-page event panel (tap coordinates and
-hit target, focus changes, input/composition events, geometry writes) for phones without a console.
+**Diagnostics** (tool-row **诊断** button, or URL `?dsh-mobile-input=bench` / `,debug`):
+
+- ⚠️ **a tokenized URL has its query rewritten away by the shell** (it is gone before plugins apply), so on a phone
+  use the tool-row button: it persists the request in localStorage and reloads. The URL parameter works for
+  cookie-authenticated (token-less) loads.
+- the **bench** renders five variant fields plus its own log panel; a few characters typed into each one locate the
+  culprit in a single pass — **A** bare textarea (normal flow, no JS writes), **B** textarea inside a `height:0`
+  absolute container (the seat's shape), **C** B plus a style write per keystroke (the pre-0.6 autosize, the
+  control), **D** B with logging only (the 0.6 behaviour), **E** bare textarea inside an iframe (a clean document).
+  The variant followed by a `KEYBOARD ...px` line is the guilty one;
+- three switches (**生产: commit / live / none**) A/B the production field's growth policy on the device itself;
+- the **debug** panel records the composer's tap coordinates and hit target, focus changes, input/composition events
+  and geometry writes. Both panels copy their log with one tap.
+
+**Verified on a live page**: `test/probe-live.mjs` drives the real app over CDP (390x844) and asserts, among other
+things, that **typing writes nothing to the page DOM**.
 
 ## Known limits
 
