@@ -305,7 +305,7 @@ const diagnosticsChip = toggleHost.querySelector('[data-mobile-input-diagnostics
 check('tool row carries the diagnostics switch', diagnosticsChip !== null
   && diagnosticsChip.getAttribute('data-state') === 'on',
   diagnosticsChip === null ? 'missing' : `state=${diagnosticsChip.getAttribute('data-state')}`)
-window.localStorage.setItem('dsh-mobile-flow:diagnostics', 'both')
+window.localStorage.setItem('dsh-mobile-flow:diagnostics', 'bench')
 await act(async () => { diagnosticsChip.dispatchEvent(new window.MouseEvent('click', { bubbles: true })) })
 check('the diagnostics switch clears the persisted request',
   window.localStorage.getItem('dsh-mobile-flow:diagnostics') === null,
