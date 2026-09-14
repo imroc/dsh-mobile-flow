@@ -276,12 +276,23 @@ check('stock editor neutralised (inert + aria-hidden)',
   editorEl.hasAttribute('inert') && editorEl.getAttribute('aria-hidden') === 'true',
   `inert=${editorEl.hasAttribute('inert')} aria-hidden=${editorEl.getAttribute('aria-hidden')}`)
 
-// While the field has focus it owns its text: an external non-empty write must
-// not clobber an IME session mid-typing.
+// While the field holds UNCOMMITTED text it owns it (an external write would
+// reset an IME session mid-typing); once that text was flushed at a commit
+// point, the app is the authority again — that is how a command picked from the
+// slash menu lands in the field.
 await act(async () => { area.focus() })
-const beforeExternal = area.value
+await act(async () => {
+  area.value = '未提交的文字'
+  area.dispatchEvent(new window.Event('input', { bubbles: true }))
+})
 await act(async () => { face.setDraft('外部写入不应覆盖') })
-check('focused field ignores external non-empty writes', area.value === beforeExternal,
+check('focused field keeps UNCOMMITTED text over external writes', area.value === '未提交的文字',
+  `value="${area.value}"`)
+await act(async () => { area.blur() })
+await act(async () => { await new Promise(r => setTimeout(r, 5)) })
+await act(async () => { area.focus() })
+await act(async () => { face.setDraft('菜单插入的命令') })
+check('a flushed field adopts app-side writes (menu pick lands)', area.value === '菜单插入的命令',
   `value="${area.value}"`)
 // ...but a committed send still clears it.
 await act(async () => { face.setDraft('') })
@@ -353,6 +364,38 @@ const restored = host.querySelector('[data-mobile-input]')
 check('returning to plain re-mounts the textarea with the machine draft',
   restored !== null && restored.value === '恢复的草稿', restored === null ? 'missing' : `value="${restored.value}"`)
 check('card marker restored', card.hasAttribute('data-mobile-input-active'))
+
+/* ── trigger strategies (v0.7): resync mirrors without losing focus ─────── */
+window.localStorage.setItem('dsh-mobile-flow:trigger', 'resync')
+window.dispatchEvent(new window.Event('dsh-mobile-flow:trigger-change'))
+{
+  const area2 = host.querySelector('[data-mobile-input]')
+  const seen = []
+  area2.addEventListener('focus', () => seen.push('focus'))
+  area2.addEventListener('blur', () => seen.push('blur'))
+  const drafts = calls.setDraft.length
+  await act(async () => {
+    area2.focus()
+    area2.value = '/goal'
+    area2.dispatchEvent(new window.Event('input', { bubbles: true }))
+  })
+  await act(async () => { await new Promise(r => setTimeout(r, 5)) })
+  check('resync mirrors the trigger into the machine', calls.setDraft.at(-1) === '/goal',
+    JSON.stringify(calls.setDraft.at(-1)))
+  check('resync drops and retakes focus inside the same task', seen.join(',') === 'focus,blur,focus'
+    || (seen.includes('blur') && seen.includes('focus')), JSON.stringify(seen))
+  check('resync leaves the field focused with its text intact',
+    document.activeElement === area2 && area2.value === '/goal', `${area2.value} active=${document.activeElement === area2}`)
+  check('resync records no extra commit', calls.setDraft.length === drafts + 1, String(calls.setDraft.length - drafts))
+  await act(async () => {
+    area2.value = ''
+    area2.dispatchEvent(new window.Event('input', { bubbles: true }))
+    area2.blur()
+  })
+  await act(async () => { await new Promise(r => setTimeout(r, 5)) })
+}
+window.localStorage.removeItem('dsh-mobile-flow:trigger')
+window.dispatchEvent(new window.Event('dsh-mobile-flow:trigger-change'))
 
 /* ── v0.6: the typing path must not touch the DOM ───────────────────────── */
 

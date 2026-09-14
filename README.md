@@ -171,6 +171,21 @@ menu and rewriting the hidden editor's DOM once per character. Now:
 machine draft, which is deliberately stale until a commit point). Switch to 「触发符:逐键」 for live filtering, at the
 cost of the keyboard dropping on that device.
 
+**v0.7.0 (fifth round, the slash moment)**: on the device only a SINGLE keyboard drop remained — the one at the
+moment `/` is typed (everything after it is fine). The device log plus the stock-editor control (typing `/` there
+keeps the keyboard) narrowed the mechanism to one thing: **republishing the draft makes the app rewrite the hidden
+stock editor's DOM asynchronously** (`EDITOR childList +1`, outside our gesture), and ArkWeb drops the IME when an
+editable surface changes from outside the input method. In the stock path that same DOM change IS the user's own
+editing, inside the gesture, so nothing drops.
+
+The trigger mirror is now **drop focus → land the write → take focus back**, entirely inside the keystroke's gesture:
+`blur()` first (IME down), then `flushSync` (react-dom) so the re-render the write causes — editor rewrite and menu
+mount — completes with nothing focused, then `focus()` to bring the IME back, still inside the gesture.
+
+- the panel gained **「触发:重聚焦 (default) / 仅触发 (v0.6.1) / 逐键 / 关」** to A/B the strategies in one tap;
+- a hidden slash-flow defect is fixed too: **picking a command from the menu now lands in the field** (the old
+  "focused field ignores external writes" guard swallowed it; it now only protects UNCOMMITTED text).
+
 **Escape hatch**: a small tool-row button (**输入法✓ / 输入法✗**, narrow viewports only) swaps back to the stock
 input box and remembers the choice — no device can be left stuck.
 
