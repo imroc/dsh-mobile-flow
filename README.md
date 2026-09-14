@@ -171,7 +171,7 @@ menu and rewriting the hidden editor's DOM once per character. Now:
 machine draft, which is deliberately stale until a commit point). Switch to 「触发符:逐键」 for live filtering, at the
 cost of the keyboard dropping on that device.
 
-**v0.7.0 (fifth round, the slash moment)**: on the device only a SINGLE keyboard drop remained — the one at the
+**v0.7.0 (fifth round, the slash moment; ✅ confirmed on a HarmonyOS 7 ArkWeb device: plain typing, `/` commands and continuous input all behave)**: on the device only a SINGLE keyboard drop remained — the one at the
 moment `/` is typed (everything after it is fine). The device log plus the stock-editor control (typing `/` there
 keeps the keyboard) narrowed the mechanism to one thing: **republishing the draft makes the app rewrite the hidden
 stock editor's DOM asynchronously** (`EDITOR childList +1`, outside our gesture), and ArkWeb drops the IME when an
