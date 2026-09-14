@@ -333,6 +333,24 @@ const diagnosticsChip = toggleHost.querySelector('[data-mobile-input-diagnostics
 check('tool row carries the diagnostics switch', diagnosticsChip !== null
   && diagnosticsChip.getAttribute('data-state') === 'on',
   diagnosticsChip === null ? 'missing' : `state=${diagnosticsChip.getAttribute('data-state')}`)
+/* Long press on the escape hatch calls the diagnostics controls out (and the
+   click that ends the press must not flip the input preference). */
+window.localStorage.setItem('dsh-mobile-flow:reveal', '1')
+window.dispatchEvent(new window.Event('dsh-mobile-flow:reveal-change'))
+check('the diagnostics chip renders once revealed (or while diagnostics are on)',
+  toggleHost.querySelector('[data-mobile-input-diagnostics]') !== null)
+window.localStorage.removeItem('dsh-mobile-flow:reveal')
+window.dispatchEvent(new window.Event('dsh-mobile-flow:reveal-change'))
+await act(async () => { toggleHost.querySelector('[data-mobile-input-toggle]').dispatchEvent(new window.PointerEvent('pointerdown', { bubbles: true })) })
+await act(async () => { await new Promise(r => setTimeout(r, 700)) })
+await act(async () => { toggleHost.querySelector('[data-mobile-input-toggle]').dispatchEvent(new window.PointerEvent('pointerup', { bubbles: true })) })
+check('long-press reveals the diagnostics controls', window.localStorage.getItem('dsh-mobile-flow:reveal') === '1',
+  String(window.localStorage.getItem('dsh-mobile-flow:reveal')))
+await act(async () => { toggleHost.querySelector('[data-mobile-input-toggle]').dispatchEvent(new window.MouseEvent('click', { bubbles: true })) })
+check('the click that ends a long press does not flip the input preference',
+  window.localStorage.getItem('dsh-mobile-flow:input') === 'off',
+  String(window.localStorage.getItem('dsh-mobile-flow:input')))
+
 window.localStorage.setItem('dsh-mobile-flow:diagnostics', 'bench')
 await act(async () => { diagnosticsChip.dispatchEvent(new window.MouseEvent('click', { bubbles: true })) })
 check('the diagnostics switch clears the persisted request',

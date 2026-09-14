@@ -86,8 +86,18 @@ journal('phase 1 — the takeover on a real session')
 let st = await page.ev(state)
 check('takeover is live on the real page', st.area !== null && st.card.marked === true)
 check('stock editor is out of the editable set', st.inert === 'false', String(st.inert))
-const chips = await page.ev(`document.querySelectorAll('[data-mobile-input-toggle],[data-mobile-input-diagnostics]').length`)
-check('tool row renders both chips (escape hatch + diagnostics)', chips === 2, String(chips))
+const chips = await page.ev(`(() => {
+  const hatch = document.querySelector('[data-mobile-input-toggle]');
+  return {
+    hatch: hatch !== null,
+    hint: hatch === null ? '' : (hatch.getAttribute('title') || ''),
+    diagnostics: document.querySelectorAll('[data-mobile-input-diagnostics]').length,
+    copy: document.querySelectorAll('[data-mobile-input-copy]').length,
+  };
+})()`)
+check('the everyday tool row shows the escape hatch only',
+  chips.hatch === true && chips.diagnostics === 0 && chips.copy === 0, JSON.stringify(chips))
+check('the escape hatch advertises the long press', /长按/.test(chips.hint), JSON.stringify(chips.hint))
 
 const geometry = await page.ev(`(() => {
   const wrap = document.querySelector('[data-mobile-input-wrap]');
@@ -236,6 +246,11 @@ const persisted = await page.ev(`(() => ({
   variants: document.querySelectorAll('[data-mobile-input-bench-field]').length,
   log: document.querySelector('[data-mobile-input-log]') !== null,
 }))()`)
+/* A token-less load boots the limited shell: the composer TOOL ROW is not
+   rendered at all here, so the chip rules are asserted in the jsdom suite
+   (which drives the tool row directly) and in phase 1 above. */
+const limitedShell = await page.ev(`document.querySelectorAll('[data-mobile-input-bench]').length`)
+console.log('limited shell: bench mounted =', limitedShell, '(tool row not rendered here)')
 check('the persisted switch drives diagnostics with no query string',
   persisted.search === '' && persisted.bench === 1 && persisted.variants === 4 && persisted.log === true,
   JSON.stringify(persisted))

@@ -186,6 +186,10 @@ mount — completes with nothing focused, then `focus()` to bring the IME back, 
 - a hidden slash-flow defect is fixed too: **picking a command from the menu now lands in the field** (the old
   "focused field ignores external writes" guard swallowed it; it now only protects UNCOMMITTED text).
 
+**v0.7.1**: the tool row stays clean — everyday it carries only the escape hatch (**输入法✓ / 输入法✗**);
+**long-press it for 600ms** to call out the **诊断** (diagnostics) button, long-press again to put it away. While
+diagnostics are on, both 诊断 and 复制日志 (copy log) show up by themselves.
+
 **Escape hatch**: a small tool-row button (**输入法✓ / 输入法✗**, narrow viewports only) swaps back to the stock
 input box and remembers the choice — no device can be left stuck.
 
