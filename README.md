@@ -190,6 +190,26 @@ mount — completes with nothing focused, then `focus()` to bring the IME back, 
 **long-press it for 600ms** to call out the **诊断** (diagnostics) button, long-press again to put it away. While
 diagnostics are on, both 诊断 and 复制日志 (copy log) show up by themselves.
 
+**v0.7.2 (phone report: tapping the input box after "new session" did nothing)**: right after a new session is
+created its **workspace may not be resolved yet** — in that window the product's card is not an input at all but the
+workspace **picker trigger** (`aria-haspopup="menu"`, `contenteditable="false"`, no bound editor). The takeover used
+to claim it anyway and **latched** that non-editability into the native textarea's `readOnly`: tapping the box raised
+no keyboard and no caret, the card's own "open the picker" tap was swallowed, so the user could neither type nor pick
+a workspace — and it did **not** recover once the workspace resolved (only a session switch, i.e. a remount, did).
+That is exactly the reported "first new session dead, switch away and create another and it works" pattern.
+
+Fixes:
+
+- The takeover now **asks the product whether the composer is a real text input** before owning it, using two
+  product-owned attributes it never writes itself: `aria-haspopup="menu"` (picker trigger) and `aria-disabled="true"`
+  (blocked composer / removed session / offline parent). When it is not an input, the takeover stays completely out of
+  the way: no card marker, no seat, no swallowed tap — the product's own picker tap works.
+- That question is answered **live** (`MutationObserver` on those two attributes): the moment the workspace resolves
+  and the composer becomes a real input, the takeover attaches — no latch.
+- Belt and braces: the takeover only ever writes `contenteditable="false"`, so any observed `"true"` is the product
+  making its composer editable again — the field's `readOnly` is cleared then, so a latched field can never outlive
+  the state that caused it.
+
 **Escape hatch**: a small tool-row button (**输入法✓ / 输入法✗**, narrow viewports only) swaps back to the stock
 input box and remembers the choice — no device can be left stuck.
 

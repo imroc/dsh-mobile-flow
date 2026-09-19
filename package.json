@@ -1,6 +1,6 @@
 {
   "name": "dsh-mobile-flow",
-  "version": "0.7.1",
+  "version": "0.7.2",
   "description": "Mobile fixes for the DeepSeek Harness Web UI: on narrow (≤720px) screens the input bar and AI confirmation cards scroll with the page instead of pinning to the viewport floor, edges slim down, session switches no longer auto-focus the input, workspace row actions stay visible, and the draft surface becomes a native textarea (ArkWeb/Android-IME hardened: zero DOM writes while typing, resizing only at commit points, with a tool-row escape hatch and an on-device diagnostics bench) so mobile IMEs stop clearing typed text and stop dropping the keyboard.",
   "license": "MIT",
   "type": "module",
@@ -40,7 +40,7 @@
     "css"
   ],
   "scripts": {
-    "test": "node test/takeover.test.mjs"
+    "test": "node test/takeover.test.mjs && node test/input-gate.test.mjs"
   },
   "devDependencies": {
     "jsdom": "^27.0.0",
