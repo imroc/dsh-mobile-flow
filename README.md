@@ -30,6 +30,7 @@ On viewports ≤720px (the same breakpoint the official question card uses):
 5. **No auto-focus on session switch** — the stock UI returns focus to the input box on every mount / session switch (a desktop convenience), which pops the on-screen keyboard over half the screen on phones. In narrow viewports the programmatic focus is swallowed; tapping the input box still focuses it normally.
 6. **Workspace row actions always visible** — the trailing buttons on workspace and session rows (the ⋯ menu with rename/delete and the ＋ for a new session in that workspace) surface on hover only; touch has no hover, so narrow viewports show them whenever the sidebar list is rendered.
 7. **Native input takeover** — the draft surface is drawn by a native textarea whose metrics match the stock box exactly (geometry is measured from the live composer every frame the card relayouts). Enter still performs the official send gesture (including `/` menu arbitration and the busy-Enter policy), file pastes are forwarded to the official attachment intake, and locked states follow the product's own editability gate.
+8. **The send button follows the field** — as soon as the field holds text, the send button reads as enabled (a live blue circle instead of the disabled grey one) and one tap sends it (queue/steer while a turn streams). While typing that state is painted by pure CSS with **zero DOM writes**, so the "no DOM movement while typing" invariant stands.
 
 Desktop (wide viewports) is completely unaffected.
 
@@ -99,6 +100,7 @@ Open a session on a phone (or a desktop DevTools window narrowed to ≤720px):
 - Swipe up a few screens: the input bar and confirmation cards scroll away with the messages.
 - The draft surface should be a native textarea (the page carries `[data-mobile-input]`). Type with an IME or voice input: text must not be cleared.
 - Send with the send button or Enter (same gesture as the stock composer).
+- Send-button state: **with text in the field the button is live** (the grey→live flip follows the field's content); one tap sends one message, first tap included.
 - The tool row shows **two chips**: 「输入法✓」(the escape hatch) and 「诊断」(open the test bench).
 - The v0.6.0 regression to watch: **no layout movement while typing** — the field's height stays put until focus
   leaves, and only then follows the content.
@@ -210,6 +212,13 @@ Fixes:
   making its composer editable again — the field's `readOnly` is cleared then, so a latched field can never outlive
   the state that caused it.
 
+**v0.7.3 (phone report: with the native input on, typed text left the bottom-right send button grey — it looked like nothing could be sent)**: the button is derived from the MACHINE draft, and the takeover keeps that draft deliberately stale while the user types (the ArkWeb lesson: commit points only). So the product kept believing the composer was empty and left its send button disabled at 40 % opacity. The old bridge (replay the tap on the button the commit enabled) depended on the engine re-testing that control after the pointer had already landed, which differs per engine — and under a running turn the same button wore the Stop square, so a tap could interrupt instead of send.
+
+Two fixes:
+
+- **The look**: the machine draft is stale, but the FIELD knows whether it holds text, and `:placeholder-shown` is the one pure-CSS value probe. While the field holds text and the machine draft is still empty, the takeover paints that button enabled (opacity 1, pointer cursor, pressed feedback) — **zero DOM writes**, the hard rule stands. Once the draft is in sync (e.g. after a commit) the button is left exactly as the product renders it.
+- **The gesture**: the card's capture `pointerdown` now recognises the submit control (the trailing row's last primary button; an interruptible child's extra Stop circle renders before it) and, when a draft is still uncommitted, **takes the gesture**: commit the draft, then run **the product's own send gesture** — the same path Enter takes (slash adjudication, busy policy, steer/queue). One tap, one send, no engine timing involved. Under a running turn the button now wears the send arrow while the field holds text (the Stop square is hidden and the product's own arrow path is painted as a mask), so face and gesture agree.
+
 **Escape hatch**: a small tool-row button (**输入法✓ / 输入法✗**, narrow viewports only) swaps back to the stock
 input box and remembers the choice — no device can be left stuck.
 
@@ -236,13 +245,19 @@ things, that **typing writes nothing to the page DOM**.
 - While the takeover is active, inline chip/decoration rendering inside the draft (e.g. `@` reference decorations) is not shown; entering a command claim switches back to the stock editor automatically.
 - Pasting an image is implemented by forwarding the paste to the official attachment intake; browsers that refuse a constructed paste event fall back to the paperclip picker.
 - IME candidate/assist behavior itself belongs to the system keyboard and is outside the plugin's control.
+- **While a turn streams and the field holds uncommitted text**, that button means Send (queue/steer) and no Stop affordance is offered — clear the field to interrupt. This matches the product's own choice of Send as the primary action whenever a draft exists.
 
 ## Development
 
 ```sh
 npm install --no-save jsdom react@18 react-dom@18
-node test/takeover.test.mjs     # runs the real client bundle in a jsdom composer card
+node test/takeover.test.mjs      # runs the real client bundle in a jsdom composer card
+node test/probe-live.mjs <token> # live app: takeover contract + diagnostics switches (CDP, 390x844)
+node test/probe-send.mjs <token> # live app: the send button's look, one-tap send, the running turn
 ```
+
+The launch token comes from `journalctl --user -u dsh-web | grep -o 'token=[A-Za-z0-9_-]*' | tail -1`
+(a new one per restart; the probes spend it on their first navigation).
 
 The test boots the shipped `lib/client.js`, renders the slot entry through React against a
 composer-card DOM, and asserts the render path, the draft mirror (typing / IME composition /

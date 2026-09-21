@@ -33,7 +33,10 @@ const dom = new JSDOM(`<!doctype html><html><head></head><body>
         <div data-composer-placeholder>给 DeepSeek 发送消息</div>
       </div>
     </div>
-    <div class="row"><button aria-label="发送消息" disabled>send</button></div>
+    <div class="row">
+      <div class="fx_tools"><button aria-label="添加附件">attach</button></div>
+      <div class="fx_trailing"><button class="fx_primary" aria-label="发送消息" disabled>send</button></div>
+    </div>
   </div>
 </body></html>`, {
   /* Diagnostics on: this run also covers the debug panel and the bench, which
@@ -251,24 +254,49 @@ Object.defineProperty(seat, 'getBoundingClientRect', {
   value: () => ({ left: 0, top: 0, right: 334, bottom: 68, width: 334, height: 68, x: 0, y: 0 }),
 })
 
-// Send-button bridge: a tap on a button the commit enables must still send.
+// Send-button bridge (2026-09-21 phone report: "typed text, the send button is
+// grey — looks like it cannot send"). The button's gate AND face read the
+// machine draft, which stays stale while the user types, so the tap is carried
+// by the capture pointerdown: commit, then run the product's own send gesture.
 const sendButton = document.querySelector('[aria-label="发送消息"]')
 sendButton.getBoundingClientRect = () => ({ left: 300, top: 500, right: 350, bottom: 530, width: 50, height: 30, x: 300, y: 500 })
+const attachButton = document.querySelector('[aria-label="添加附件"]')
+/* Outside the seat box, so the tap counts as a toolbar tap. */
+attachButton.getBoundingClientRect = () => ({ left: 40, top: 500, right: 70, bottom: 530, width: 30, height: 30, x: 40, y: 500 })
 let sendClicks = 0
 sendButton.addEventListener('click', () => { sendClicks += 1 })
+const tapAt = (target, x, y) => {
+  const event = new window.PointerEvent('pointerdown', { bubbles: true, cancelable: true, clientX: x, clientY: y })
+  target.dispatchEvent(event)
+  return event
+}
 await act(async () => {
   area.value = '桥接发送'
   area.dispatchEvent(new window.Event('input', { bubbles: true }))
 })
 check('bridge: the typed text is still uncommitted before the tap', calls.setDraft.at(-1) !== '桥接发送', JSON.stringify(calls.setDraft.at(-1)))
-sendButton.disabled = true
-globalThis.__afterSetDraft = value => { if (value === '桥接发送') sendButton.disabled = false }
+const submitsBefore = calls.submit
+const carried = await act(async () => tapAt(sendButton, 320, 515))
+check('bridge: tapping the (disabled) send button commits the draft',
+  calls.setDraft.at(-1) === '桥接发送', JSON.stringify(calls.setDraft.at(-1)))
+check('bridge: the tap runs the product send gesture (Enter path)',
+  calls.submit === submitsBefore + 1, `submits=${calls.submit - submitsBefore}`)
+check('bridge: the gesture is carried inside the tap, not replayed later',
+  sendClicks === 0 && carried.defaultPrevented === true,
+  `clicks=${sendClicks} prevented=${carried.defaultPrevented}`)
+
+// A toolbar button that does NOT depend on the draft keeps its own gesture: the
+// commit is bookkeeping, the tap runs untouched.
+let attachClicks = 0
+attachButton.addEventListener('click', () => { attachClicks += 1 })
 await act(async () => {
-  seat.dispatchEvent(new window.PointerEvent('pointerdown', { bubbles: true, cancelable: true, clientX: 320, clientY: 515 }))
+  area.value = '工具行'
+  area.dispatchEvent(new window.Event('input', { bubbles: true }))
 })
-check('bridge: tapping the (disabled) send button commits the draft', calls.setDraft.at(-1) === '桥接发送', JSON.stringify(calls.setDraft.at(-1)))
-await act(async () => { await new Promise(r => setTimeout(r, 10)) })
-check('bridge: the tap is replayed on the button our commit enabled', sendClicks === 1, `clicks=${sendClicks}`)
+const bypassed = await act(async () => tapAt(attachButton, 55, 515))
+check('other toolbar taps commit the draft too', calls.setDraft.at(-1) === '工具行', JSON.stringify(calls.setDraft.at(-1)))
+check('other toolbar taps are left to the engine', bypassed.defaultPrevented === false && calls.submit === submitsBefore + 1,
+  `prevented=${bypassed.defaultPrevented} submits=${calls.submit - submitsBefore}`)
 globalThis.__afterSetDraft = null
 
 // The stock editor is taken out of the focus / IME tree while we own the field.

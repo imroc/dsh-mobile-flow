@@ -33,7 +33,10 @@ const dom = new JSDOM(`<!doctype html><html><head></head><body>
         <div data-composer-placeholder>选择工作区</div>
       </div>
     </div>
-    <div class="row"><button aria-label="发送消息" disabled>send</button></div>
+    <div class="row">
+      <div class="fx_tools"><button aria-label="添加附件">attach</button></div>
+      <div class="fx_trailing"><button class="fx_primary" aria-label="发送消息" disabled>send</button></div>
+    </div>
   </div>
 </body></html>`, { url: 'http://127.0.0.1:3080/', pretendToBeVisual: true })
 
