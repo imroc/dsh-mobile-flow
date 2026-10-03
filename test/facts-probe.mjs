@@ -8,6 +8,10 @@ import { writeFileSync } from 'node:fs'
 
 const CHROME = '/root/.cache/ms-playwright/chromium-1243/chrome-linux64/chrome'
 const PORT = 9347
+/* Fixed profile: it keeps the app's own remembered state between runs, which
+   means a stale one can land on the "选择一个工作区开始" picker instead of a
+   session — a legitimate card here is then simply NOT taken over. Delete
+   /tmp/dsh-facts-profile when the report looks surprising. */
 const BASE = process.env.DSH_BASE ?? 'http://127.0.0.1:3080'
 const token = process.argv[2]
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
@@ -70,6 +74,31 @@ const ev = async (expr) => {
   return r.exceptionDetails ? { __error: r.exceptionDetails.exception?.description ?? JSON.stringify(r.exceptionDetails) } : r.result.value
 }
 
+/* 0.2.0 boots a fresh profile behind the "预览版说明" preview notice, which owns
+   focus and paints over the composer: the facts below would describe a page
+   nobody can type into. Acknowledge it first (it is idempotent — the state is
+   per profile, so later runs no longer show it). */
+const noticeButton = await ev(`(() => {
+  const title = [...document.querySelectorAll('h1,h2,h3')]
+    .find((el) => /预览版说明|Preview notice/i.test(el.textContent || ''));
+  if (title === undefined) return null;
+  const root = title.closest('[role="dialog"], [aria-modal="true"]') || title.parentElement || document;
+  const button = [...root.querySelectorAll('button')]
+    .find((b) => /继续|知道了|我知道了|开始使用|关闭|Continue|Got it|Close/i.test(b.textContent || ''));
+  if (button === undefined) return null;
+  const r = button.getBoundingClientRect();
+  return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) };
+})()`)
+if (noticeButton !== null && noticeButton.__error === undefined) {
+  for (const type of ['mousePressed', 'mouseReleased']) {
+    await send('Input.dispatchMouseEvent',
+      { type, x: noticeButton.x, y: noticeButton.y, button: 'left', buttons: 1, clickCount: 1 }, sessionId)
+  }
+  /* Dismissing re-renders the shell (the composer remounts and the takeover is
+     re-applied on the next effect tick), so let it settle before reading. */
+  await sleep(1500)
+}
+
 const report = await ev(`(() => {
   const out = {};
   out.ua = navigator.userAgent;
@@ -88,6 +117,9 @@ const report = await ev(`(() => {
     styleTag: pluginStyle !== null,
     hasTakeoverCss: pluginStyle !== null && pluginStyle.textContent.includes('data-mobile-input-wrap'),
   };
+  /* The landing page's own words: they say whether this run got a session
+     (composer is a real input) or the workspace picker (no takeover, by design). */
+  out.page = (document.body.innerText || '').split(String.fromCharCode(10)).join(' | ').slice(0, 140);
   const card = document.querySelector('[data-composer-card]');
   out.card = card === null ? null : {
     mobileInputActive: card.hasAttribute('data-mobile-input-active'),

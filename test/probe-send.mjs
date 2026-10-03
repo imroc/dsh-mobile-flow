@@ -129,9 +129,16 @@ check('the disabled send button is the product grey to start with',
   st.primary.disabled === true && Number(st.primary.opacity) < 1,
   `opacity=${st.primary.opacity} label=${st.primary.label}`)
 
-await type('你好')
+/* The greeting is what the later assertions look for in the transcript; the
+   rest of the prompt is what keeps the turn alive long enough to observe the
+   running face. A bare "你好" on a fast model can finish between two CDP
+   round-trips, which is a property of the model, not of the button
+   (measured 2026-10-04 on 0.2.0-rc.2: the same probe failed the running-turn
+   check with the short prompt and passed with a long one). */
+const PROMPT = '你好。请用不少于 800 字系统性地介绍一下插件体系、加载顺序与事件总线的关系。'
+await type(PROMPT)
 st = await state()
-check('the field holds the typed text', st.field.value === '你好', JSON.stringify(st.field.value))
+check('the field holds the typed text', st.field.value === PROMPT, JSON.stringify(st.field.value))
 check('the machine draft is still stale (deferred mirror)', st.machineEmpty === true, JSON.stringify(st.machine))
 check('the send button now READS as enabled (the reported grey is gone)',
   st.primary.disabled === true && st.primary.opacity === '1' && st.primary.cursor === 'pointer',
@@ -146,6 +153,9 @@ journal('phase 2 — one tap on that button sends')
 const before = st.userRows
 await tap(st.primary.x, st.primary.y)
 const sent = await waitFor(async () => (await state()).userRows > before)
+/* Poll for the Stop face instead of sampling once: the button only wears it
+   while the turn streams, so a single read races the model. */
+const running = await waitFor(async () => (await state()).primary.label === '停止生成', 8000)
 st = await state()
 const taps = await page.ev('window.__taps')
 const carried = taps.at(-1) !== undefined && taps.at(-1).prevented === true
@@ -157,12 +167,12 @@ check('the field and the machine both cleared', st.field.value === '' && st.mach
   `field=${JSON.stringify(st.field.value)} machine=${JSON.stringify(st.machine)}`)
 check('no duplicate send (still one message)', (await state()).userRows === before + 1)
 check('the sent message carries the typed text', (await pageText()).includes('你好'))
-check('a turn is running (the button became Stop)', st.primary.label === '停止生成',
-  JSON.stringify(st.primary.label))
+check('a turn is running (the button became Stop)', running === true,
+  `label=${st.primary.label} (waited up to 8s for 停止生成)`)
 
 /* ── phase 3: the running case ─────────────────────────────────────────── */
 journal('phase 3 — a follow-up typed while the turn streams')
-if (st.primary.label === '停止生成') {
+if (running === true) {
   await type('follow-up')
   st = await state()
   check('the button wears the send arrow while the field holds text',

@@ -45,7 +45,7 @@ The plugin ships a browser half (`exports["./client"]`, declared via `dsh.client
 ## Requirements
 
 - DeepSeek Harness Web profile (`dsh web`), any recent 0.1.x release
-- Selectors and slot contracts verified against 0.1.2-rc.1 and 0.1.5-rc.1; they target product slot contracts that are stable within a version line but may need small updates after a major product revamp
+- Selectors and slot contracts verified against 0.1.2-rc.1, 0.1.5-rc.1 and 0.2.0-rc.2 (2026-10-04, by the live probes below plus a static audit of the shipped client bundles); they target product slot contracts that are stable within a version line but may need small updates after a major product revamp
 
 ## Install
 
@@ -101,7 +101,8 @@ Open a session on a phone (or a desktop DevTools window narrowed to ≤720px):
 - The draft surface should be a native textarea (the page carries `[data-mobile-input]`). Type with an IME or voice input: text must not be cleared.
 - Send with the send button or Enter (same gesture as the stock composer).
 - Send-button state: **with text in the field the button is live** (the grey→live flip follows the field's content); one tap sends one message, first tap included.
-- The tool row shows **two chips**: 「输入法✓」(the escape hatch) and 「诊断」(open the test bench).
+- The tool row shows **one chip**, 「输入法✓」(the escape hatch); a 600 ms long press on it calls out the 「诊断」 chip.
+- On 0.2.0 the first load of a fresh browser profile shows the product's 「预览版说明」 preview notice; acknowledge it (继续) before verifying — it takes focus and paints over the composer, so nothing under it can be typed into.
 - The v0.6.0 regression to watch: **no layout movement while typing** — the field's height stays put until focus
   leaves, and only then follows the content.
 - Widen the window and the stock behavior returns.

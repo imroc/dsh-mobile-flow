@@ -98,15 +98,51 @@ export async function open(options = {}) {
     return r.result.value
   }
 
+  /* A fresh 0.2.0 profile boots behind the "预览版说明" preview notice: a modal
+     that takes focus (its H2 is focused with tabindex=-1) and paints OVER the
+     composer, so every pointer tap and every programmatic focus() aimed at the
+     takeover field lands on the notice instead (measured 2026-10-04 against
+     0.2.0-rc.2 — it is what made the typing phase of probe-live fail). Dismiss
+     it before any probe touches the composer. Acknowledge state is per profile,
+     so this is idempotent and silent on the runs that no longer show it. */
+  const dismissFirstRunNotice = async () => {
+    const found = await ev(`(() => {
+      const title = [...document.querySelectorAll('h1,h2,h3')]
+        .find((el) => /预览版说明|Preview notice/i.test(el.textContent || ''));
+      if (title === undefined) return null;
+      const root = title.closest('[role="dialog"], [aria-modal="true"]') || title.parentElement || document;
+      const button = [...root.querySelectorAll('button')]
+        .find((b) => /继续|知道了|我知道了|开始使用|关闭|Continue|Got it|Close/i.test(b.textContent || ''));
+      if (button === undefined) return null;
+      const r = button.getBoundingClientRect();
+      return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) };
+    })()`)
+    if (found === null) return false
+    /* The button lives inside a dialog the engine treats as modal, so click it
+       with a real pointer (a synthetic .click() works too, but the pointer path
+       is what a phone does). */
+    for (const type of ['mousePressed', 'mouseReleased']) {
+      await send('Input.dispatchMouseEvent',
+        { type, x: found.x, y: found.y, button: 'left', buttons: 1, clickCount: 1 }, sessionId)
+    }
+    /* Dismissing remounts the composer, and the takeover re-applies on the next
+       effect tick: settle before the caller reads the page. */
+    await sleep(1200)
+    return true
+  }
+  await dismissFirstRunNotice()
+
   return {
     send: (method, payload) => send(method, payload, sessionId),
     ev,
     errors,
     url,
+    dismissFirstRunNotice,
     /** Load another path in the same page (the cookie keeps the session). */
     navigate: async (path, settleMs = settle) => {
       await send('Page.navigate', { url: path.startsWith('http') ? path : `${BASE}${path}` }, sessionId)
       await sleep(settleMs)
+      await dismissFirstRunNotice()
     },
     close: async () => {
       try {
