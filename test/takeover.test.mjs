@@ -49,11 +49,17 @@ const { window } = dom
 const { document } = window
 
 // --- platform stubs the DSH shell provides -----------------------------
+/* The device facts the takeover's default gate reads. Mutable so the
+   wide-viewport section at the end can simulate a tablet and a desktop. */
+const device = { narrow: true, touch: false }
 window.matchMedia = query => ({
-  matches: /max-width:\s*720px/.test(query),
+  matches: /max-width:\s*720px/.test(query)
+    ? device.narrow
+    : (/any-pointer:\s*coarse/.test(query) ? device.touch : false),
   media: query,
   addEventListener() {}, removeEventListener() {}, addListener() {}, removeListener() {},
 })
+Object.defineProperty(window.navigator, 'maxTouchPoints', { value: 0, configurable: true })
 window.ResizeObserver = class { observe() {} disconnect() {} }
 window.requestAnimationFrame = fn => window.setTimeout(() => fn(Date.now()), 0)
 window.cancelAnimationFrame = id => window.clearTimeout(id)
@@ -566,6 +572,94 @@ await act(async () => {
   window.localStorage.removeItem('dsh-mobile-flow:growth')
   window.dispatchEvent(new window.Event('dsh-mobile-flow:growth-change'))
 })
+
+/* ── any viewport, any touch device: the switch is not a phone control ────
+   A HarmonyOS/Android tablet loses typed text to its IME exactly like a phone
+   does, at 1280px (user report 2026-10-05: MatePad + Doubao voice input). So:
+   the escape hatch renders on EVERY viewport, the default gate is "narrow OR
+   touch", and a wide mouse-only desktop stays untouched. */
+{
+  const mountPair = async () => {
+    const overlayHost = document.createElement('div')
+    overlayHost.className = 'anchor2'
+    document.querySelector('.anchor').append(overlayHost)
+    const overlayRoot = createRoot(overlayHost)
+    await act(async () => { overlayRoot.render(React.createElement(Harness)) })
+    const chipHost = document.createElement('div')
+    document.body.append(chipHost)
+    const chipRoot = createRoot(chipHost)
+    await act(async () => { chipRoot.render(React.createElement(toggleComponent, {})) })
+    return { overlayHost, overlayRoot, chipHost, chipRoot }
+  }
+  const unmountPair = async (pair) => {
+    await act(async () => { pair.chipRoot.unmount() })
+    await act(async () => { pair.overlayRoot.unmount() })
+  }
+  const chipState = (pair) => {
+    const chip = pair.chipHost.querySelector('[data-mobile-input-toggle]')
+    return chip === null ? null : chip.getAttribute('data-state')
+  }
+  const takeoverOn = (pair) => pair.overlayHost.querySelector('[data-mobile-input]') !== null
+    && card.hasAttribute('data-mobile-input-active')
+
+  /* Detach the narrow-viewport pair from the body checks above. */
+  await act(async () => { toggleRoot.unmount() })
+  await act(async () => { root.unmount() })
+  await act(async () => {
+    window.localStorage.removeItem('dsh-mobile-flow:input')
+    window.dispatchEvent(new window.Event('dsh-mobile-flow:preference'))
+  })
+  check('unmounting the narrow pair leaves the card unmarked', !card.hasAttribute('data-mobile-input-active'))
+
+  /* 1) wide + mouse only: no takeover (the desktop promise), chip still there */
+  device.narrow = false
+  device.touch = false
+  Object.defineProperty(window.navigator, 'maxTouchPoints', { value: 0, configurable: true })
+  let pair = await mountPair()
+  check('wide mouse-only viewport: no takeover by default', takeoverOn(pair) === false)
+  check('wide mouse-only viewport: the escape hatch still renders', chipState(pair) === 'off', String(chipState(pair)))
+
+  /* 2) the chip asks for it explicitly: the takeover works on a wide viewport */
+  await act(async () => {
+    pair.chipHost.querySelector('[data-mobile-input-toggle]').dispatchEvent(new window.MouseEvent('click', { bubbles: true }))
+  })
+  check('the chip turns the takeover on at any width', takeoverOn(pair) === true && chipState(pair) === 'on',
+    `chip=${chipState(pair)}`)
+  check('the explicit switch is persisted', window.localStorage.getItem('dsh-mobile-flow:input') === 'on',
+    String(window.localStorage.getItem('dsh-mobile-flow:input')))
+  await act(async () => {
+    pair.chipHost.querySelector('[data-mobile-input-toggle]').dispatchEvent(new window.MouseEvent('click', { bubbles: true }))
+  })
+  check('a second tap hands the surface back', takeoverOn(pair) === false && chipState(pair) === 'off')
+  await unmountPair(pair)
+
+  /* 3) wide + touch (a tablet): the takeover is on by default, no preference */
+  await act(async () => {
+    window.localStorage.removeItem('dsh-mobile-flow:input')
+    window.dispatchEvent(new window.Event('dsh-mobile-flow:preference'))
+  })
+  device.touch = true
+  pair = await mountPair()
+  check('wide touch device (tablet): the takeover is on by default', takeoverOn(pair) === true, `chip=${chipState(pair)}`)
+  check('wide touch device: the chip reads as enabled', chipState(pair) === 'on', String(chipState(pair)))
+  await unmountPair(pair)
+
+  /* 4) coarse-pointer unsupported, but the device still reports touch points */
+  device.touch = false
+  Object.defineProperty(window.navigator, 'maxTouchPoints', { value: 5, configurable: true })
+  pair = await mountPair()
+  check('touch detected through navigator.maxTouchPoints alone', takeoverOn(pair) === true)
+  await unmountPair(pair)
+
+  /* Leave the environment (and the viewport) as the earlier sections found it. */
+  device.narrow = true
+  device.touch = false
+  Object.defineProperty(window.navigator, 'maxTouchPoints', { value: 0, configurable: true })
+  await act(async () => {
+    window.localStorage.removeItem('dsh-mobile-flow:input')
+    window.dispatchEvent(new window.Event('dsh-mobile-flow:preference'))
+  })
+}
 
 console.log(`\n==== ${failures.length === 0 ? 'ALL CHECKS PASSED' : `${failures.length} FAILED`} ====`)
 for (const f of failures) console.log(`  FAIL: ${f}`)

@@ -306,6 +306,106 @@ await page.ev(`localStorage.removeItem('dsh-mobile-flow:diagnostics')`)
 await page.navigate('/')
 check('clearing the switch returns the page to normal',
   (await page.ev(`document.querySelectorAll('[data-mobile-input-bench],[data-mobile-input-debug]').length`)) === 0)
+/* ── phase 4: a tablet (wide viewport, touch input) ───────────────────── */
+journal('phase 4 — wide viewports: a tablet gets the fix, a desktop does not')
+const wideFacts = `(() => {
+  const chip = document.querySelector('[data-mobile-input-toggle]');
+  const seat = document.querySelector('[data-composer-seat]');
+  return {
+    width: window.innerWidth,
+    touch: (window.matchMedia && window.matchMedia('(any-pointer: coarse)').matches)
+      || (typeof navigator.maxTouchPoints === 'number' && navigator.maxTouchPoints > 0),
+    parked: document.querySelector('[data-mobile-input]') !== null
+      && document.querySelector('[data-composer-card]') !== null
+      && document.querySelector('[data-composer-card]').hasAttribute('data-mobile-input-active'),
+    chip: chip !== null,
+    chipState: chip === null ? null : chip.getAttribute('data-state'),
+    seatPosition: seat === null ? null : getComputedStyle(seat).position,
+    /* The narrow block's own fingerprint: it forces the composer side clearance
+       to 4px, so anything but 4px proves the phone-only layout stayed out. */
+    clearance: (() => {
+      const card = document.querySelector('[data-composer-card]');
+      if (card === null) return null;
+      return getComputedStyle(card).getPropertyValue('--dsh-composer-side-clearance').trim();
+    })(),
+  };
+})()`
+await page.send('Emulation.setDeviceMetricsOverride', { width: 1280, height: 900, deviceScaleFactor: 2, mobile: false })
+await page.send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 5 })
+await page.navigate('/')
+let wide = await page.ev(wideFacts)
+check('the tablet viewport is wide', wide.width > 720, String(wide.width))
+check('touch is visible to the page', wide.touch === true, JSON.stringify(wide.touch))
+check('a wide touch device gets the takeover with no preference', wide.parked === true, JSON.stringify(wide))
+check('the escape hatch is offered there too', wide.chip === true && wide.chipState === 'on', JSON.stringify(wide.chipState))
+/* The phone-only layout (in-flow composer, slim edges) must NOT leak into a
+   tablet: only the IME takeover follows touch. The 4px side clearance is the
+   narrow block's own fingerprint (`position` is not — the hero composer is
+   static in the stock layout too). */
+check('phone-only layout transforms stay off on a wide viewport', wide.clearance !== '4px',
+  `clearance=${wide.clearance} seat=${wide.seatPosition}`)
+
+/* The tablet case, end to end: the seat must still be measured off the stock
+   scrollport (the geometry code is viewport-agnostic, this proves it at 1280)
+   and typing must still hold and commit through the native field. */
+const wideGeometry = await page.ev(`(() => {
+  const wrap = document.querySelector('[data-mobile-input-wrap]');
+  const card = document.querySelector('[data-composer-card]');
+  const scroll = card.querySelector('[data-input-scroll]');
+  const a = wrap.getBoundingClientRect(), b = scroll.getBoundingClientRect();
+  return { wrap: [Math.round(a.left), Math.round(a.top), Math.round(a.width), Math.round(a.height)],
+           scroll: [Math.round(b.left), Math.round(b.top), Math.round(b.width), Math.round(b.height)] };
+})()`)
+check('the wide seat box still equals the official scrollport',
+  JSON.stringify(wideGeometry.wrap) === JSON.stringify(wideGeometry.scroll), JSON.stringify(wideGeometry))
+await page.ev(`document.querySelector('[data-mobile-input]').focus()`)
+await page.send('Input.insertText', { text: '平板输入' })
+await sleep(300)
+const wideTyped = await page.ev(`(() => {
+  const area = document.querySelector('[data-mobile-input]');
+  const editor = document.querySelector('[data-composer-input]');
+  return { value: area.value, focused: document.activeElement === area, machine: editor.textContent };
+})()`)
+check('typing on a wide touch device holds every character',
+  wideTyped.value === '平板输入' && wideTyped.focused === true, JSON.stringify(wideTyped))
+await page.ev(`document.querySelector('[data-mobile-input]').blur()`)
+await sleep(700)
+const wideCommitted = await page.ev(`document.querySelector('[data-composer-input]').textContent`)
+check('the wide viewport commit reaches the input machine', wideCommitted === '平板输入', JSON.stringify(wideCommitted))
+await page.ev(`(() => {
+  const area = document.querySelector('[data-mobile-input]');
+  area.focus();
+  area.value = '';
+  area.dispatchEvent(new Event('input', { bubbles: true }));
+  area.blur();
+  return true;
+})()`)
+await sleep(600)
+
+await page.send('Emulation.setTouchEmulationEnabled', { enabled: false })
+await page.navigate('/')
+wide = await page.ev(wideFacts)
+check('a wide mouse-only desktop keeps the stock composer', wide.parked === false, JSON.stringify(wide))
+check('...but is still offered the switch', wide.chip === true && wide.chipState === 'off',
+  JSON.stringify(wide.chipState))
+const chipRect = await page.ev(`(() => {
+  const chip = document.querySelector('[data-mobile-input-toggle]');
+  const r = chip.getBoundingClientRect();
+  return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) };
+})()`)
+for (const type of ['mousePressed', 'mouseReleased']) {
+  await page.send('Input.dispatchMouseEvent',
+    { type, x: chipRect.x, y: chipRect.y, button: 'left', buttons: 1, clickCount: 1 })
+}
+await sleep(900)
+check('one tap arms the takeover on a desktop viewport too',
+  (await page.ev(`document.querySelector('[data-mobile-input]') !== null`)) === true)
+/* Leave the device on the automatic default again (this profile is disposable,
+   but a probe should not change what the next check sees). */
+await page.ev(`localStorage.removeItem('dsh-mobile-flow:input')`)
+await page.send('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 3, mobile: true })
+await page.send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 5 })
+
 /* Only OUR errors count. The message line is what identifies a source: every
    plugin's bundle URL appears in every stack frame, so matching the whole
    string blames whoever happens to be listed. Other plugins in the profile

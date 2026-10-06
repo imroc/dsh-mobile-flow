@@ -5,7 +5,7 @@
 Two mobile fixes for the [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) (dsh) Web UI:
 
 1. **In-flow composer** — on narrow screens (≤720px) the input bar and AI confirmation cards scroll with the page instead of pinning to the viewport floor, so swiping up gives the message transcript the full screen back.
-2. **Native input takeover** — on narrow screens the draft surface becomes a native `<textarea>`, sidestepping the Lexical contenteditable IME flow that swallows text on Android keyboards (voice input most of all).
+2. **Native input takeover** — on narrow screens **and on any touch device** (a large tablet included) the draft surface becomes a native `<textarea>`, sidestepping the Lexical contenteditable IME flow that swallows text on Android/HarmonyOS keyboards (voice input most of all).
 
 A client-side overlay plus one slot component. No product source is modified; removing the plugin restores the stock behavior exactly.
 
@@ -21,18 +21,19 @@ The stock composer's text surface is a **Lexical contenteditable** (`createEdito
 
 ## What it does
 
-On viewports ≤720px (the same breakpoint the official question card uses):
+On viewports ≤720px (the same breakpoint the official question card uses) the first four are layout fixes; the rest key off **"narrow screen or touch device"** — the IME problem has nothing to do with screen size, and a HarmonyOS tablet loses typed text at 1280px just the same (user report 2026-10-05: MatePad + Doubao voice input):
 
 1. **The composer seat joins the document flow** — input bar and confirmation cards now live at the end of the transcript. Swipe up and they scroll out of view; the transcript becomes full-screen.
 2. **Short conversations still dock to the bottom** — when the transcript is shorter than one screen, the message area stretches so the composer stays flush with the viewport floor, visually identical to the stock behavior. Long conversations get the full-screen treatment.
 3. **Floating controls re-anchor** — the back-to-bottom button and turn navigator no longer reserve height for the sticky seat and sit close to the viewport floor again.
 4. **Slim edges** — the content-layer paddings that keep the transcript, header, input card, and confirmation cards well off the screen edges (16–32px per side) shrink to a slim 4px side inset (8px top), reclaiming most of the wasted width without the cramped feel of full-bleed. The page shell itself never adds whitespace; the gaps come entirely from these paddings.
-5. **No auto-focus on session switch** — the stock UI returns focus to the input box on every mount / session switch (a desktop convenience), which pops the on-screen keyboard over half the screen on phones. In narrow viewports the programmatic focus is swallowed; tapping the input box still focuses it normally.
-6. **Workspace row actions always visible** — the trailing buttons on workspace and session rows (the ⋯ menu with rename/delete and the ＋ for a new session in that workspace) surface on hover only; touch has no hover, so narrow viewports show them whenever the sidebar list is rendered.
-7. **Native input takeover** — the draft surface is drawn by a native textarea whose metrics match the stock box exactly (geometry is measured from the live composer every frame the card relayouts). Enter still performs the official send gesture (including `/` menu arbitration and the busy-Enter policy), file pastes are forwarded to the official attachment intake, and locked states follow the product's own editability gate.
+5. **No auto-focus on session switch** — the stock UI returns focus to the input box on every mount / session switch (a desktop convenience), which pops the on-screen keyboard over half the screen on phones (and is just as unwelcome on a tablet). Narrow viewports and touch devices swallow that programmatic focus; tapping the input box still focuses it normally.
+6. **Workspace row actions always visible** — the trailing buttons on workspace and session rows (the ⋯ menu with rename/delete and the ＋ for a new session in that workspace) surface on hover only; touch has no hover, so narrow viewports and touch devices show them whenever the sidebar list is rendered.
+7. **Native input takeover** — narrow screens and touch devices are taken over by default (a mouse-driven desktop is left alone); the draft surface is drawn by a native textarea whose metrics match the stock box exactly (geometry is measured from the live composer every frame the card relayouts). Enter still performs the official send gesture (including `/` menu arbitration and the busy-Enter policy), file pastes are forwarded to the official attachment intake, and locked states follow the product's own editability gate.
 8. **The send button follows the field** — as soon as the field holds text, the send button reads as enabled (a live blue circle instead of the disabled grey one) and one tap sends it (queue/steer while a turn streams). While typing that state is painted by pure CSS with **zero DOM writes**, so the "no DOM movement while typing" invariant stands.
+9. **The switch is not a phone control** — the tool-row 「输入法✓/✗」 chip renders on every viewport, so a large tablet always has a one-tap say in this; it is also the fallback for a device the default gate fails to recognise as touch.
 
-Desktop (wide viewports) is completely unaffected.
+**A mouse-driven desktop is completely unaffected** (a touch device is taken over however wide it is — that is the point of this change).
 
 ## How it works
 
@@ -65,15 +66,17 @@ Restart `dsh web`, then refresh the browser page.
 
 ## Overrides (optional)
 
-The native takeover is on by default **on narrow viewports only** (≤720px). To override it — for instance to exercise it on a desktop browser:
+The native takeover is on by default **on narrow viewports and on any touch device** — screen size is not the criterion. To override it — for instance to exercise it on a desktop browser:
 
 ```js
 // Browser console, same origin, persists
 localStorage.setItem("dsh-mobile-flow:input", "off");    // never take over
-localStorage.setItem("dsh-mobile-flow:input", "on");     // narrow viewports only (default)
-localStorage.setItem("dsh-mobile-flow:input", "force");  // take over on any viewport
-localStorage.removeItem("dsh-mobile-flow:input");        // back to default
+localStorage.setItem("dsh-mobile-flow:input", "on");     // always take over (any viewport, desktop included)
+localStorage.setItem("dsh-mobile-flow:input", "force");  // same as "on" (what the URL flag =1 writes)
+localStorage.removeItem("dsh-mobile-flow:input");        // back to default: narrow or touch
 ```
+
+The easier route is the 「输入法✓/✗」 chip in the tool row: it reports **what this device is actually doing** (not the stored preference), and one tap flips between "always" and "never".
 
 One-shot override: `?dsh-mobile-input=1` (force) / `=0` (off).
 
@@ -95,7 +98,7 @@ localStorage.removeItem("dsh-mobile-flow:growth");       // back to default
 
 ## Verify
 
-Open a session on a phone (or a desktop DevTools window narrowed to ≤720px):
+Open a session on a phone (or a desktop DevTools window narrowed to ≤720px) — **a tablet works the same at any width**:
 
 - Swipe up a few screens: the input bar and confirmation cards scroll away with the messages.
 - The draft surface should be a native textarea (the page carries `[data-mobile-input]`). Type with an IME or voice input: text must not be cleared.
@@ -105,11 +108,11 @@ Open a session on a phone (or a desktop DevTools window narrowed to ≤720px):
 - On 0.2.0 the first load of a fresh browser profile shows the product's 「预览版说明」 preview notice; acknowledge it (继续) before verifying — it takes focus and paints over the composer, so nothing under it can be typed into.
 - The v0.6.0 regression to watch: **no layout movement while typing** — the field's height stays put until focus
   leaves, and only then follows the content.
-- Widen the window and the stock behavior returns.
+- Widen the window: the stock behavior returns on a **mouse-driven** desktop; a tablet/phone stays taken over however wide it gets (the tool row keeps the 「输入法✓」 chip).
 
 ## Update discipline (this plugin's convention)
 
-1. **Hot updates only**: after a change, restart `dsh web` so the bundle revision is recomputed — client bundles are served `immutable`, and a new rev is what guarantees a phone refresh picks up the new code (never make the user clear caches).
+1. **Hot updates only**: after a change, **a page refresh is enough** — never make the user clear caches. Client bundles are served `immutable`, but the rev is recomputed from the artifact file's mtime/size by the client-modules HMR watch (measured 2026-10-06: new code served in a fresh page with no `dsh web` restart); only a disabled watch needs a restart.
 2. **Always keep an escape hatch**: anything that takes over stock UI behaviour must be revertible from the page itself (see the 输入法✓/✗ button below), so a bad build never blocks normal use.
 
 ## Compatibility hardening (v0.5.1 / v0.5.2 / v0.6.0, after HarmonyOS / ArkWeb feedback)
