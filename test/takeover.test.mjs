@@ -291,6 +291,34 @@ check('bridge: the gesture is carried inside the tap, not replayed later',
   sendClicks === 0 && carried.defaultPrevented === true,
   `clicks=${sendClicks} prevented=${carried.defaultPrevented}`)
 
+// The engine's own trailing click (2026-10-12 tablet report: "sending a message
+// kills the session"): canceling pointerdown does NOT cancel the tap's click,
+// and by the time it lands the machine draft is empty and a turn is live — so
+// the product reads its primary button as Stop and cancels the very turn the
+// user just sent into. The bridge swallows that one click.
+let documentClicks = 0
+const countClick = () => { documentClicks += 1 }
+document.addEventListener('click', countClick)
+const trailing = new window.MouseEvent('click', { bubbles: true, cancelable: true, clientX: 320, clientY: 515 })
+sendButton.dispatchEvent(trailing)
+document.removeEventListener('click', countClick)
+check('bridge: the tap’s own trailing click is swallowed (no Stop gesture on that button)',
+  trailing.defaultPrevented === true && documentClicks === 0 && sendClicks === 0,
+  `prevented=${trailing.defaultPrevented} reachedDocument=${documentClicks} clicks=${sendClicks}`)
+
+// A click with no carried tap in front of it is the product's own gesture and
+// must keep working — that is the only way the running turn's Stop is reached.
+await act(async () => {
+  area.value = ''
+  area.dispatchEvent(new window.Event('input', { bubbles: true }))
+})
+await act(async () => tapAt(attachButton, 55, 515))
+const passThrough = new window.MouseEvent('click', { bubbles: true, cancelable: true, clientX: 320, clientY: 515 })
+sendButton.dispatchEvent(passThrough)
+check('bridge: an untouched click keeps the product’s own gesture (Stop stays reachable)',
+  passThrough.defaultPrevented === false && sendClicks === 1,
+  `prevented=${passThrough.defaultPrevented} clicks=${sendClicks}`)
+
 // A toolbar button that does NOT depend on the draft keeps its own gesture: the
 // commit is bookkeeping, the tap runs untouched.
 let attachClicks = 0

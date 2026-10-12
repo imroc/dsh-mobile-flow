@@ -30,7 +30,7 @@ On viewports ≤720px (the same breakpoint the official question card uses) the 
 5. **No auto-focus on session switch** — the stock UI returns focus to the input box on every mount / session switch (a desktop convenience), which pops the on-screen keyboard over half the screen on phones (and is just as unwelcome on a tablet). Narrow viewports and touch devices swallow that programmatic focus; tapping the input box still focuses it normally.
 6. **Workspace row actions always visible** — the trailing buttons on workspace and session rows (the ⋯ menu with rename/delete and the ＋ for a new session in that workspace) surface on hover only; touch has no hover, so narrow viewports and touch devices show them whenever the sidebar list is rendered.
 7. **Native input takeover** — narrow screens and touch devices are taken over by default (a mouse-driven desktop is left alone); the draft surface is drawn by a native textarea whose metrics match the stock box exactly (geometry is measured from the live composer every frame the card relayouts). Enter still performs the official send gesture (including `/` menu arbitration and the busy-Enter policy), file pastes are forwarded to the official attachment intake, and locked states follow the product's own editability gate.
-8. **The send button follows the field** — as soon as the field holds text, the send button reads as enabled (a live blue circle instead of the disabled grey one) and one tap sends it (queue/steer while a turn streams). While typing that state is painted by pure CSS with **zero DOM writes**, so the "no DOM movement while typing" invariant stands.
+8. **The send button follows the field** — as soon as the field holds text, the send button reads as enabled (a live blue circle instead of the disabled grey one) and one tap sends it (queue/steer while a turn streams), with the tap's own trailing `click` swallowed so the product can never read that same tap as an interrupt (v0.8.1). While typing that state is painted by pure CSS with **zero DOM writes**, so the "no DOM movement while typing" invariant stands.
 9. **The switch is not a phone control** — the tool-row 「输入法✓/✗」 chip renders on every viewport, so a large tablet always has a one-tap say in this; it is also the fallback for a device the default gate fails to recognise as touch.
 
 **A mouse-driven desktop is completely unaffected** (a touch device is taken over however wide it is — that is the point of this change).
@@ -222,6 +222,20 @@ Two fixes:
 
 - **The look**: the machine draft is stale, but the FIELD knows whether it holds text, and `:placeholder-shown` is the one pure-CSS value probe. While the field holds text and the machine draft is still empty, the takeover paints that button enabled (opacity 1, pointer cursor, pressed feedback) — **zero DOM writes**, the hard rule stands. Once the draft is in sync (e.g. after a commit) the button is left exactly as the product renders it.
 - **The gesture**: the card's capture `pointerdown` now recognises the submit control (the trailing row's last primary button; an interruptible child's extra Stop circle renders before it) and, when a draft is still uncommitted, **takes the gesture**: commit the draft, then run **the product's own send gesture** — the same path Enter takes (slash adjudication, busy policy, steer/queue). One tap, one send, no engine timing involved. Under a running turn the button now wears the send arrow while the field holds text (the Stop square is hidden and the product's own arrow path is painted as a mask), so face and gesture agree.
+
+**v0.8.1 (tablet re-check: "sending a message kills the session")**: the report was that sending while a turn streams
+**terminates that turn** — the message lands in the pending queue instead, and 「插话发送」 (steer) is greyed out
+forever (only a *running* turn can be steered), so the only way out was delete-and-resend. The cause sits in the
+v0.7.3 gesture bridge: canceling `pointerdown` does **not** cancel the tap's own `click` (measured 2026-10-12, Chrome
+152: a trusted `click` on that very button ~100 ms later, when the finger lifts). By then the carried submit has
+emptied the machine draft, so the product reads its own button as the running turn's **Stop** control and calls
+`session/cancel` — the turn the user just sent into dies with `turn/end aborted reason user`, the queued message stays
+behind (`keepInbox`), exactly what the host log showed. The fix records the carried control and **swallows that one
+trailing click** (same button, within 1 s) in the card's capture phase (`preventDefault` + `stopPropagation`), so one
+tap is one send; a click with no carried tap in front of it still reaches the product (tapping the button with an
+empty field remains the stock Stop). Verified by two new jsdom assertions plus the live page at 640×1024 and
+1024×768: only `session/prompt` is sent, no `session/cancel`, the turn keeps streaming; the empty-field tap still
+sends `session/cancel`.
 
 **Escape hatch**: a small tool-row button (**输入法✓ / 输入法✗**, narrow viewports only) swaps back to the stock
 input box and remembers the choice — no device can be left stuck.

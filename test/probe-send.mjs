@@ -183,9 +183,20 @@ if (running === true) {
   st = await state()
   const taps2 = await page.ev('window.__taps')
   check('the follow-up tap was carried too', taps2.at(-1).prevented === true, JSON.stringify(taps2.at(-1)))
-  check('the follow-up reached the conversation instead of interrupting the turn', delivered === true)
+  check('the follow-up reached the conversation (queued under the running turn)', delivered === true)
   check('the field gave the follow-up up (it was handed to the product)', st.field.value === '',
     JSON.stringify(st.field.value))
+  /* The 2026-10-12 tablet failure was invisible to every check above: the
+     follow-up IS delivered — and then the tap's own trailing `click` reached
+     the product's button, which by then wore Stop, canceling the very turn the
+     user sent into (message left in the queue, 插话发送 greyed out). Sample the
+     turn ~0.9 s after the tap: a cancel flips the label back to 发送消息 in well
+     under a second, while the 800-word prompt cannot have finished by then. */
+  await sleep(900)
+  const afterTap = await state()
+  check('the running turn survives the follow-up tap (no cancel behind it)',
+    afterTap.primary !== null && afterTap.primary.label === '停止生成',
+    `label=${afterTap.primary === null ? 'none' : afterTap.primary.label}`)
 } else {
   /* The model answered before the follow-up could be typed — the running case
      needs a live turn, so report it instead of faking it. */
